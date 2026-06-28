@@ -87,3 +87,73 @@ def get_query_length(parsed) -> int:
     Long query strings often indicate tracking parameters or encoded payloads.
     """
     return len(parsed.query)
+
+# ================================================================
+# FEATURE GROUP 2 - Count Features
+# Raw character counts capture obfuscation patterns.
+# Phishers use extra dots (subdomain stacking), hyphens
+# (paypal-secure.com), @ symbols (trick browsers into ignoring
+# the left part), and digits mixed into domains.
+# ================================================================
+
+def get_num_dots(url: str) -> int:
+    return url.count(".")
+
+def get_num_dashes(url: str) -> int:
+    return url.count("-")
+
+def get_num_underscores(url: str) -> int:
+    return url.count("_")
+
+def get_num_slashes(url: str) -> int:
+    # Count ALL slashes including the two in http://
+    return url.count("/")
+
+def get_num_question_marks(url: str) -> int:
+    return url.count("?")
+
+def get_num_equals(url: str) -> int:
+    return url.count("=")
+
+def get_num_at_symbols(url: str) -> int:
+    return url.count("@")
+
+def get_num_ampersands(url: str) -> int:
+    return url.count("&")
+
+def get_num_exclamation(url: str) -> int:
+    return url.count("!")
+
+def get_num_percent(url: str) -> int:
+    return url.count("%")
+
+def get_num_digits_in_domain(parsed) -> int:
+    """
+    Count of digit characters in the domain only (not path/query).
+    Legitimate domains rarely mix numbers in: g00gle.com or
+    paypa1.com are typosquatting signals. IP-based URLs score
+    very high here.
+    """
+    netloc = parsed.netloc
+    if ":" in netloc:
+        netloc = netloc.split(":")[0]
+    return sum(1 for c in netloc if c.isdigit())
+
+def get_num_subdomains(parsed) -> int:
+    """
+    Number of subdomains = number of domain parts minus 2.
+    google.com          -> parts=2, subdomains=0 (normal)
+    mail.google.com     -> parts=3, subdomains=1 (normal)
+    secure.paypal.login.evil.com -> parts=5, subdomains=3 (suspicious)
+
+    Subtract 2 because every domain has at minimum one name
+    part and one TLD: [name].[tld]
+    Multi-part TLDs like .co.uk are not perfectly handled here
+    but the count is still a useful signal.
+    """
+    netloc = parsed.netloc
+    if ":" in netloc:
+        netloc = netloc.split(":")[0]
+    parts = netloc.split(".")
+    # Clamp to 0 minimum - malformed URLs could produce negative
+    return max(0, len(parts) - 2)
