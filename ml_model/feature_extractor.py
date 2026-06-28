@@ -49,4 +49,41 @@ SUSPICIOUS_KEYWORDS = {
     "winner", "click", "submit", "access", "webscr"
 }
 
+# ================================================================
+# FEATURE GROUP 1 - Length Features
+# Why length matters: phishing URLs tend to be much longer than
+# legitimate ones. Attackers append subdomains, fake paths, and
+# query strings to disguise the real domain.
+# Example: http://secure-login.paypal.com.phishing-site.xyz/verify
+# ================================================================
 
+def get_url_length(url: str) -> int:
+    """Total character count of the full URL string."""
+    return len(url)
+
+
+def get_domain_length(parsed) -> int:
+    """
+    Character count of the domain (netloc) only.
+    parsed.netloc includes the port if present e.g. evil.com:8080
+    Strip the port before measuring.
+    """
+    netloc = parsed.netloc
+    # Remove port number if present - evil.com:8080 -> evil.com
+    if ":" in netloc:
+        netloc = netloc.split(":")[0]
+    return len(netloc)
+
+
+def get_path_length(parsed) -> int:
+    """Character count of the URL path (everything after the domain)."""
+    return len(parsed.path)
+
+
+def get_query_length(parsed) -> int:
+    """
+    Character count of the query string.
+    For http://site.com/page?id=1&token=abc, this returns len("id=1&token=abc")
+    Long query strings often indicate tracking parameters or encoded payloads.
+    """
+    return len(parsed.query)
