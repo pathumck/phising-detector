@@ -254,3 +254,102 @@ def get_num_suspicious_words(url: str) -> int:
     """Count of how many different keywords appear in the URL."""
     url_lower = url.lower()
     return sum(1 for kw in SUSPICIOUS_KEYWORDS if kw in url_lower)
+
+
+# ================================================================
+# FEATURE GROUP 5 - Structural Features
+# Higher-level properties that capture URL ecology and entropy.
+# ================================================================
+
+def is_shortened_url(parsed) -> int:
+    """
+    1 if the domain matches a known URL shortener service.
+    URL shorteners hide the real destination. A phisher sends
+    bit.ly/abc123 so the victim cannot see the actual domain.
+    Check the registrable domain (last two parts) to catch
+    subdomains of shorteners too.
+    """
+    netloc = parsed.netloc
+    if ":" in netloc:
+        netloc = netloc.split(":")[0]
+    # Get registrable domain - last two parts e.g. bit.ly
+    parts = netloc.split(".")
+    if len(parts) >= 2:
+        registrable = ".".join(parts[-2:])
+    else:
+        registrable = netloc
+    return 1 if registrable in SHORTENER_DOMAINS else 0
+
+
+def get_tld_risk_score(url: str) -> int:
+    """
+    Scores the TLD by how frequently it appears in phishing.
+
+    0 = low risk  (.com .org .net .edu .gov and country variants)
+    1 = medium    (everything else - unknown risk level)
+    2 = high risk (.tk .ml .ga .cf .gq .xyz .top .click etc.)
+        These are free-registration TLDs with no identity checks,
+        overwhelmingly represented in phishing feeds.
+
+    Check HIGH_RISK first, then LOW_RISK, default to medium.
+    Check the last two or three characters of the URL to
+    catch multi-character TLDs without parsing complexity.
+    """
+    url_lower = url.lower().split("?")[0]  # ignore query string
+    for tld in HIGH_RISK_TLDS:
+        if url_lower.endswith(tld) or (tld + "/") in url_lower:
+            return 2
+    for tld in LOW_RISK_TLDS:
+        if url_lower.endswith(tld) or (tld + "/") in url_lower:
+            return 0
+    return 1
+
+
+def get_digit_to_letter_ratio(url: str) -> float:
+    """
+    Ratio of digit characters to letter characters in the full URL.
+    Legitimate URLs are mostly letters (domain names, path words).
+    Phishing URLs often substitute digits for letters (g00gle, paypa1)
+    or use random numeric strings in paths.
+    Returns 0.0 if there are no letters (avoids division by zero).
+    """
+    digits = sum(1 for c in url if c.isdigit())
+    letters = sum(1 for c in url if c.isalpha())
+    if letters == 0:
+        return 0.0
+    return round(digits / letters, 6)
+
+
+def get_url_entropy(url: str) -> float:
+    """
+    Shannon entropy of the full URL string.
+
+    Entropy measures randomness. A URL like:
+      https://google.com/search?q=python
+    has low entropy - recognisable English words, predictable structure.
+
+    A URL like:
+      http://xK9mP2qR7vL.tk/a8f3b1c9d2e5
+    has high entropy - random characters, hard to predict.
+
+    Phishers who generate URLs programmatically produce high-entropy
+    strings. Entropy is calculated as:
+      H = -sum(p * log2(p)) for each unique character
+    where p = count of that character / total URL length.
+
+    Returns a float, typically between 3.0 (simple) and 5.5 (complex).
+    """
+    if not url:
+        return 0.0
+    length = len(url)
+    # Count frequency of each unique character
+    freq = {}
+    for char in url:
+        freq[char] = freq.get(char, 0) + 1
+    # Calculate Shannon entropy
+    entropy = 0.0
+    for count in freq.values():
+        p = count / length
+        entropy -= p * math.log2(p)
+    return round(entropy, 6)
+
