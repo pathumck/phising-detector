@@ -237,3 +237,20 @@ def has_prefix_suffix(parsed) -> int:
     if ":" in netloc:
         netloc = netloc.split(":")[0]
     return 1 if "-" in netloc else 0
+
+# ================================================================
+# FEATURE GROUP 4 - Keyword Features
+# Scanning the full URL string for vocabulary that phishers use
+# to mimic legitimate login or account management pages.
+# ================================================================
+
+def get_has_suspicious_words(url: str) -> int:
+    """1 if any keyword from SUSPICIOUS_KEYWORDS appears in the URL."""
+    url_lower = url.lower()
+    return 1 if any(kw in url_lower for kw in SUSPICIOUS_KEYWORDS) else 0
+
+
+def get_num_suspicious_words(url: str) -> int:
+    """Count of how many different keywords appear in the URL."""
+    url_lower = url.lower()
+    return sum(1 for kw in SUSPICIOUS_KEYWORDS if kw in url_lower)
