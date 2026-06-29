@@ -157,3 +157,83 @@ def get_num_subdomains(parsed) -> int:
     parts = netloc.split(".")
     # Clamp to 0 minimum - malformed URLs could produce negative
     return max(0, len(parts) - 2)
+
+# ================================================================
+# FEATURE GROUP 3 - Binary Flag Features
+# Each returns exactly 0 or 1. These encode specific structural
+# properties that are strong individual phishing signals.
+# ================================================================
+
+# Pre-compile regex patterns once at module load time.
+# Compiling inside the function would re-compile on every URL
+# which is ~100x slower over 500,000 URLs.
+
+# Matches a standard IPv4 address pattern in the netloc.
+_IP_PATTERN = re.compile(
+    r"^(\d{1,3}\.){3}\d{1,3}$"
+)
+
+
+# Matches a non-standard port number in the netloc.
+_PORT_PATTERN = re.compile(r":\d+")
+
+
+def has_https(parsed) -> int:
+    """
+    1 if the scheme is https, 0 otherwise.
+    HTTPS alone does not guarantee safety - phishers can get
+    free TLS certificates from Let's Encrypt - but its absence
+    is a weak negative signal.
+    """
+    return 1 if parsed.scheme == "https" else 0
+
+
+def has_ip_address(parsed) -> int:
+    """
+    1 if the domain is a raw IP address instead of a hostname.
+    Legitimate services never use raw IPs in public URLs.
+    Example: http://192.168.1.1/login - clearly suspicious.
+    """
+    netloc = parsed.netloc
+    if ":" in netloc:
+        netloc = netloc.split(":")[0]
+    return 1 if _IP_PATTERN.match(netloc) else 0
+
+
+def has_at_symbol(url: str) -> int:
+    """Binary version of num_at - 1 if any @ exists in the URL."""
+    return 1 if "@" in url else 0
+
+
+def has_double_slash(parsed) -> int:
+    """
+    1 if a double slash appears in the path (after the scheme).
+    The normal // after http: is expected. A second // in the
+    path is a redirect obfuscation technique.
+    Example: http://legitimate.com//http://evil.com
+    """
+    return 1 if "//" in parsed.path else 0
+
+
+def has_port(parsed) -> int:
+    """
+    1 if a non-standard port appears in the URL.
+    Legitimate sites use port 80 (http) or 443 (https) implicitly
+    and never show the port number in the URL. Phishing sites
+    sometimes run on unusual ports to avoid firewalls.
+    Example: http://paypal.com:8080/login
+    """
+    return 1 if _PORT_PATTERN.search(parsed.netloc) else 0
+
+
+def has_prefix_suffix(parsed) -> int:
+    """
+    1 if a hyphen (-) appears in the domain name.
+    Phishers use hyphens to create convincing-looking subdomains:
+    paypal-secure.com, login-amazon.com, apple-id-verify.com
+    Legitimate brands rarely hyphenate their primary domain.
+    """
+    netloc = parsed.netloc
+    if ":" in netloc:
+        netloc = netloc.split(":")[0]
+    return 1 if "-" in netloc else 0
