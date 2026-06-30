@@ -353,3 +353,111 @@ def get_url_entropy(url: str) -> float:
         entropy -= p * math.log2(p)
     return round(entropy, 6)
 
+# ================================================================
+# MASTER EXTRACTION FUNCTION
+# ================================================================
+
+FEATURE_NAMES = [
+    # Group 1 - Length (4)
+    "url_length",
+    "domain_length",
+    "path_length",
+    "query_length",
+    # Group 2 - Counts (12)
+    "num_dots",
+    "num_dashes",
+    "num_underscores",
+    "num_slashes",
+    "num_question_marks",
+    "num_equals",
+    "num_at_symbols",
+    "num_ampersands",
+    "num_exclamation",
+    "num_percent",
+    "num_digits_in_domain",
+    "num_subdomains",
+    # Group 3 - Binary flags (6)
+    "has_https",
+    "has_ip_address",
+    "has_at_symbol",
+    "has_double_slash",
+    "has_port",
+    "has_prefix_suffix",
+    # Group 4 - Keywords (2)
+    "has_suspicious_words",
+    "num_suspicious_words",
+    # Group 5 - Structural (3)
+    "is_shortened_url",
+    "tld_risk_score",
+    "digit_to_letter_ratio",
+]
+
+
+def extract_features(url: str) -> list:
+    """
+    Extract all 27 features from a single URL string.
+
+    Parameters
+    ----------
+    url : str
+        The raw URL string, e.g. "http://evil.com/login?user=test"
+
+    Returns
+    -------
+    list of 27 numeric values in the order defined by FEATURE_NAMES.
+    All values are either int or float - no strings, no None.
+    The ML model requires a pure numeric vector.
+
+    This function is designed to never crash on a malformed URL.
+    urlparse handles garbage input gracefully - it just returns
+    empty strings for the parts it cannot parse.
+    """
+    # Ensure always work with a string - never None
+    url = str(url).strip()
+
+    # Add scheme if missing so urlparse can find the domain correctly.
+    # "google.com/path" without http:// causes urlparse to treat
+    # the whole thing as a path, not a netloc - giving domain_length=0
+    if not url.startswith(("http://", "https://")):
+        url = "http://" + url
+
+    # Parse once and pass the parsed object to all functions.
+    # Parsing is expensive - doing it once per URL, not 27 times.
+    parsed = urlparse(url)
+
+    features = [
+        # Group 1 - Length
+        get_url_length(url),
+        get_domain_length(parsed),
+        get_path_length(parsed),
+        get_query_length(parsed),
+        # Group 2 - Counts
+        get_num_dots(url),
+        get_num_dashes(url),
+        get_num_underscores(url),
+        get_num_slashes(url),
+        get_num_question_marks(url),
+        get_num_equals(url),
+        get_num_at_symbols(url),
+        get_num_ampersands(url),
+        get_num_exclamation(url),
+        get_num_percent(url),
+        get_num_digits_in_domain(parsed),
+        get_num_subdomains(parsed),
+        # Group 3 - Binary flags
+        has_https(parsed),
+        has_ip_address(parsed),
+        has_at_symbol(url),
+        has_double_slash(parsed),
+        has_port(parsed),
+        has_prefix_suffix(parsed),
+        # Group 4 - Keywords
+        get_has_suspicious_words(url),
+        get_num_suspicious_words(url),
+        # Group 5 - Structural
+        is_shortened_url(parsed),
+        get_tld_risk_score(url),
+        get_digit_to_letter_ratio(url),
+    ]
+
+    return features
