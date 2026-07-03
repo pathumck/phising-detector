@@ -58,3 +58,36 @@ print(f"Training set: {X_train.shape[0]:,} rows")
 print(f"Test set:     {X_test.shape[0]:,} rows")
 print(f"Train phishing ratio: {y_train.mean()*100:.2f}%")
 print(f"Test  phishing ratio: {y_test.mean()*100:.2f}%")
+
+
+# Step 3 - Fit StandardScaler on TRAINING DATA ONLY
+print("\n" + "=" * 60)
+print("FITTING STANDARD SCALER (training data only)")
+print("=" * 60)
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)   # fit + transform training
+X_test_scaled  = scaler.transform(X_test)        # transform only - no fit
+
+print("Scaler fitted on training data.")
+print("Test data transformed using training statistics only.")
+print(f"Feature means (first 5): "
+      f"{scaler.mean_[:5].round(3)}")
+print(f"Feature stds  (first 5): "
+      f"{scaler.scale_[:5].round(3)}")
+
+# Helper - compute all metrics from true and predicted labels
+def evaluate(name, y_true, y_pred, y_proba):
+    """Return a dict of all evaluation metrics for one model."""
+    cm = confusion_matrix(y_true, y_pred)
+    tn, fp, fn, tp = cm.ravel()
+    return {
+        "model":     name,
+        "accuracy":  round(accuracy_score(y_true, y_pred),  4),
+        "precision": round(precision_score(y_true, y_pred), 4),
+        "recall":    round(recall_score(y_true, y_pred),    4),
+        "f1":        round(f1_score(y_true, y_pred),        4),
+        "roc_auc":   round(roc_auc_score(y_true, y_proba),  4),
+        "tn": int(tn), "fp": int(fp),
+        "fn": int(fn), "tp": int(tp),
+    }
