@@ -91,3 +91,48 @@ def evaluate(name, y_true, y_pred, y_proba):
         "tn": int(tn), "fp": int(fp),
         "fn": int(fn), "tp": int(tp),
     }
+
+
+# Step 4 - Train Model 1: Logistic Regression
+print("\n" + "=" * 60)
+print("TRAINING MODEL 1 - LOGISTIC REGRESSION")
+print("=" * 60)
+
+lr = LogisticRegression(
+    max_iter=1000,
+    class_weight="balanced",
+    C=1.0,
+    solver="lbfgs",
+    random_state=42
+)
+
+t0 = time.time()
+lr.fit(X_train_scaled, y_train)
+lr_time = time.time() - t0
+print(f"Training complete in {lr_time:.1f}s")
+
+lr_pred  = lr.predict(X_test_scaled)
+lr_proba = lr.predict_proba(X_test_scaled)[:, 1]
+lr_metrics = evaluate("LogisticRegression", y_test, lr_pred, lr_proba)
+
+print(f"  Accuracy:  {lr_metrics['accuracy']:.4f}")
+print(f"  Precision: {lr_metrics['precision']:.4f}")
+print(f"  Recall:    {lr_metrics['recall']:.4f}  [priority metric]")
+print(f"  F1-Score:  {lr_metrics['f1']:.4f}  [selection metric]")
+print(f"  ROC-AUC:   {lr_metrics['roc_auc']:.4f}")
+print(f"  Confusion Matrix:")
+print(f"    TN={lr_metrics['tn']:,}  FP={lr_metrics['fp']:,}")
+print(f"    FN={lr_metrics['fn']:,}  TP={lr_metrics['tp']:,}")
+
+# Feature coefficients for reporting
+print(f"\nTop 10 most influential features (by abs coefficient):")
+coef_df = pd.DataFrame({
+    "feature": X.columns,
+    "coefficient": lr.coef_[0]
+}).reindex(lr.coef_[0].argsort()[::-1])
+# Sort by absolute value
+coef_df["abs_coef"] = coef_df["coefficient"].abs()
+coef_df = coef_df.sort_values("abs_coef", ascending=False)
+for _, row in coef_df.head(10).iterrows():
+    direction = "PHISHING" if row["coefficient"] > 0 else "LEGITIMATE"
+    print(f"  {row['feature']:<25} {row['coefficient']:+.4f}  {direction}")
