@@ -136,3 +136,53 @@ coef_df = coef_df.sort_values("abs_coef", ascending=False)
 for _, row in coef_df.head(10).iterrows():
     direction = "PHISHING" if row["coefficient"] > 0 else "LEGITIMATE"
     print(f"  {row['feature']:<25} {row['coefficient']:+.4f}  {direction}")
+
+
+# Step 5 - Train Model 2: XGBoost
+print("\n" + "=" * 60)
+print("TRAINING MODEL 2 - XGBOOST")
+print("=" * 60)
+
+# Calculate class imbalance ratio for scale_pos_weight
+neg_count = (y_train == 0).sum()   # legitimate
+pos_count = (y_train == 1).sum()   # phishing
+scale_pos_weight = neg_count / pos_count
+print(f"scale_pos_weight = {neg_count:,} / {pos_count:,} = {scale_pos_weight:.4f}")
+
+xgb = XGBClassifier(
+    n_estimators=200,
+    learning_rate=0.1,
+    max_depth=6,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    scale_pos_weight=scale_pos_weight,
+    random_state=42,
+    verbosity=0,
+    eval_metric="logloss"
+)
+
+t0 = time.time()
+xgb.fit(X_train, y_train)   # raw features - no scaling for XGBoost
+xgb_time = time.time() - t0
+print(f"Training complete in {xgb_time:.1f}s")
+
+xgb_pred  = xgb.predict(X_test)
+xgb_proba = xgb.predict_proba(X_test)[:, 1]
+xgb_metrics = evaluate("XGBoost", y_test, xgb_pred, xgb_proba)
+
+print(f"  Accuracy:  {xgb_metrics['accuracy']:.4f}")
+print(f"  Precision: {xgb_metrics['precision']:.4f}")
+print(f"  Recall:    {xgb_metrics['recall']:.4f}  [priority metric]")
+print(f"  F1-Score:  {xgb_metrics['f1']:.4f}  [selection metric]")
+print(f"  ROC-AUC:   {xgb_metrics['roc_auc']:.4f}")
+print(f"  Confusion Matrix:")
+print(f"    TN={xgb_metrics['tn']:,}  FP={xgb_metrics['fp']:,}")
+print(f"    FN={xgb_metrics['fn']:,}  TP={xgb_metrics['tp']:,}")
+
+print(f"\nTop 10 most important features (by XGBoost gain):")
+importance_df = pd.DataFrame({
+    "feature":    X.columns,
+    "importance": xgb.feature_importances_
+}).sort_values("importance", ascending=False)
+for _, row in importance_df.head(10).iterrows():
+    print(f"  {row['feature']:<25} {row['importance']:.4f}")
