@@ -224,3 +224,40 @@ else:
     best_metrics    = lr_metrics
     best_uses_scaler = True
     print(f"\n  SELECTED: Logistic Regression (F1={lr_metrics['f1']:.4f})")
+
+
+# Step 7 - 5-fold cross-validation on the selected model
+print("\n" + "=" * 60)
+print(f"5-FOLD CROSS-VALIDATION - {best_model_name}")
+print("=" * 60)
+print("Running... (this may take 1-3 minutes)")
+
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+if best_uses_scaler:
+    # Select scaled or raw feature matrix based on requirements of the chosen model
+    X_cv = pd.DataFrame(
+        scaler.transform(X), columns=X.columns
+    )
+else:
+    X_cv = X
+
+cv_f1 = cross_val_score(
+    best_model, X_cv, y,
+    cv=cv, scoring="f1", n_jobs=-1
+)
+cv_recall = cross_val_score(
+    best_model, X_cv, y,
+    cv=cv, scoring="recall", n_jobs=-1
+)
+cv_auc = cross_val_score(
+    best_model, X_cv, y,
+    cv=cv, scoring="roc_auc", n_jobs=-1
+)
+
+print(f"\n  F1      per fold: {[round(v,4) for v in cv_f1]}")
+print(f"  F1      mean: {cv_f1.mean():.4f}  std: {cv_f1.std():.4f}")
+print(f"\n  Recall  per fold: {[round(v,4) for v in cv_recall]}")
+print(f"  Recall  mean: {cv_recall.mean():.4f}  std: {cv_recall.std():.4f}")
+print(f"\n  ROC-AUC per fold: {[round(v,4) for v in cv_auc]}")
+print(f"  ROC-AUC mean: {cv_auc.mean():.4f}  std: {cv_auc.std():.4f}")
