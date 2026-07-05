@@ -186,3 +186,41 @@ importance_df = pd.DataFrame({
 }).sort_values("importance", ascending=False)
 for _, row in importance_df.head(10).iterrows():
     print(f"  {row['feature']:<25} {row['importance']:.4f}")
+
+
+# Step 6 - Side-by-side comparison and model selection
+print("\n" + "=" * 60)
+print("MODEL COMPARISON")
+print("=" * 60)
+
+headers = ["Metric", "Logistic Regression", "XGBoost", "Winner"]
+print(f"  {headers[0]:<12} {headers[1]:<22} {headers[2]:<12} {headers[3]}")
+print("  " + "-" * 55)
+
+metrics_to_compare = [
+    ("Accuracy",  "accuracy"),
+    ("Precision", "precision"),
+    ("Recall",    "recall"),
+    ("F1-Score",  "f1"),
+    ("ROC-AUC",   "roc_auc"),
+]
+
+for label, key in metrics_to_compare:
+    lr_val  = lr_metrics[key]
+    xgb_val = xgb_metrics[key]
+    winner  = "XGBoost" if xgb_val >= lr_val else "LR"
+    print(f"  {label:<12} {lr_val:<22.4f} {xgb_val:<12.4f} {winner}")
+
+# Select winner by F1-score (per spec)
+if xgb_metrics["f1"] >= lr_metrics["f1"]:
+    best_model      = xgb
+    best_model_name = "XGBoost"
+    best_metrics    = xgb_metrics
+    best_uses_scaler = False
+    print(f"\n  SELECTED: XGBoost (F1={xgb_metrics['f1']:.4f})")
+else:
+    best_model      = lr
+    best_model_name = "LogisticRegression"
+    best_metrics    = lr_metrics
+    best_uses_scaler = True
+    print(f"\n  SELECTED: Logistic Regression (F1={lr_metrics['f1']:.4f})")
