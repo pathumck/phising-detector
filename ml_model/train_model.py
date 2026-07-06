@@ -22,6 +22,7 @@ from sklearn.metrics import (
     f1_score, roc_auc_score, confusion_matrix
 )
 from xgboost import XGBClassifier
+import os
 
 
 # Step 1 - Load feature matrix and labels
@@ -261,3 +262,85 @@ print(f"\n  Recall  per fold: {[round(v,4) for v in cv_recall]}")
 print(f"  Recall  mean: {cv_recall.mean():.4f}  std: {cv_recall.std():.4f}")
 print(f"\n  ROC-AUC per fold: {[round(v,4) for v in cv_auc]}")
 print(f"  ROC-AUC mean: {cv_auc.mean():.4f}  std: {cv_auc.std():.4f}")
+
+
+# Step 8 - Save all models and metadata
+print("\n" + "=" * 60)
+print("SAVING MODELS")
+print("=" * 60)
+
+# Create models directory
+os.makedirs("models", exist_ok=True)
+
+# Save individual models
+joblib.dump(lr,  "models/lr_model.pkl")
+joblib.dump(xgb, "models/xgb_model.pkl")
+joblib.dump(scaler, "models/scaler.pkl")
+print("  Saved: models/lr_model.pkl")
+print("  Saved: models/xgb_model.pkl")
+print("  Saved: models/scaler.pkl")
+
+# Save the best model as the production model
+joblib.dump(best_model, "models/phishing_model.pkl")
+print(f"  Saved: models/phishing_model.pkl  ({best_model_name})")
+
+# Save metadata - report will reference these numbers
+metadata = {
+    "selected_model":      best_model_name,
+    "uses_scaler":         best_uses_scaler,
+    "feature_names":       list(X.columns),
+    "num_features":        len(X.columns),
+    "train_size":          len(X_train),
+    "test_size":           len(X_test),
+    "label_convention":    {"0": "legitimate", "1": "phishing"},
+    "logistic_regression": {
+        **lr_metrics,
+        "training_time_seconds": round(lr_time, 2),
+        "parameters": {
+            "max_iter": 1000,
+            "class_weight": "balanced",
+            "C": 1.0,
+            "solver": "lbfgs",
+            "random_state": 42
+        }
+    },
+    "xgboost": {
+        **xgb_metrics,
+        "training_time_seconds": round(xgb_time, 2),
+        "scale_pos_weight": round(scale_pos_weight, 4),
+        "parameters": {
+            "n_estimators": 200,
+            "learning_rate": 0.1,
+            "max_depth": 6,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "random_state": 42
+        }
+    },
+    "cross_validation": {
+        "folds": 5,
+        "model": best_model_name,
+        "f1_scores":      [round(v, 4) for v in cv_f1],
+        "f1_mean":        round(cv_f1.mean(), 4),
+        "f1_std":         round(cv_f1.std(), 4),
+        "recall_mean":    round(cv_recall.mean(), 4),
+        "recall_std":     round(cv_recall.std(), 4),
+        "roc_auc_mean":   round(cv_auc.mean(), 4),
+        "roc_auc_std":    round(cv_auc.std(), 4),
+    }
+}
+
+with open("models/model_metadata.json", "w") as f:
+    json.dump(metadata, f, indent=2)
+print("  Saved: models/model_metadata.json")
+
+print("\n" + "=" * 60)
+print("TRAINING COMPLETE")
+print("=" * 60)
+print(f"  Best model:  {best_model_name}")
+print(f"  F1-Score:    {best_metrics['f1']:.4f}")
+print(f"  Recall:      {best_metrics['recall']:.4f}  (target >= 0.90)")
+print(f"  ROC-AUC:     {best_metrics['roc_auc']:.4f}  (target >= 0.90)")
+print(f"\n  Recall: {'MEETS TARGET' if best_metrics['recall'] >= 0.90 else 'BELOW TARGET - see evaluate_model.py for threshold tuning'}")
+print(f"  ROC-AUC: {'MEETS TARGET' if best_metrics['roc_auc'] >= 0.90 else 'BELOW TARGET'}")
+print("\nRun evaluate_model.py next for the full evaluation report.")
