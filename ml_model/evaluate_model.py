@@ -202,3 +202,41 @@ Why False Positives happen:
 """)
 
 
+# SECTION 5 - Summary for report
+print("=" * 60)
+print("SECTION 5  SUMMARY FOR YOUR REPORT")
+print("=" * 60)
+
+print(f"""
+Dataset:        579,920 URLs (339,074 legitimate / 240,846 phishing)
+Features:       27 lexical URL features (no DNS/WHOIS/page content)
+Train/Test:     80% / 20% stratified split (random_state=42)
+
+                Logistic Regression    XGBoost (selected)
+Accuracy:       {meta['logistic_regression']['accuracy']:.4f}                 {meta['xgboost']['accuracy']:.4f}
+Precision:      {meta['logistic_regression']['precision']:.4f}                 {meta['xgboost']['precision']:.4f}
+Recall:         {meta['logistic_regression']['recall']:.4f}                 {meta['xgboost']['recall']:.4f}
+F1-Score:       {meta['logistic_regression']['f1']:.4f}                 {meta['xgboost']['f1']:.4f}
+ROC-AUC:        {meta['logistic_regression']['roc_auc']:.4f}                 {meta['xgboost']['roc_auc']:.4f}
+Training time:  {meta['logistic_regression']['training_time_seconds']:.1f}s                    {meta['xgboost']['training_time_seconds']:.1f}s
+
+5-Fold CV (XGBoost):
+  F1      mean={meta['cross_validation']['f1_mean']:.4f}  std={meta['cross_validation']['f1_std']:.4f}
+  Recall  mean={meta['cross_validation']['recall_mean']:.4f}  std={meta['cross_validation']['recall_std']:.4f}
+  ROC-AUC mean={meta['cross_validation']['roc_auc_mean']:.4f}  std={meta['cross_validation']['roc_auc_std']:.4f}
+
+All three targets met:
+  Recall  {meta['xgboost']['recall']:.4f}  >= 0.90  
+  F1      {meta['xgboost']['f1']:.4f}  >= 0.85  
+  ROC-AUC {meta['xgboost']['roc_auc']:.4f}  >= 0.90  
+""")
+
+# Save threshold results to metadata
+with open("models/model_metadata.json") as f:
+    meta = json.load(f)
+meta["threshold_analysis"] = threshold_results
+with open("models/model_metadata.json", "w") as f:
+    json.dump(meta, f, indent=2)
+
+print("Threshold analysis saved to models/model_metadata.json")
+print("\nevaluate_model.py complete.")
