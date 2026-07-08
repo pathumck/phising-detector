@@ -53,3 +53,41 @@ xgb_proba = xgb.predict_proba(X_test)[:, 1]
 lr_proba  = lr.predict_proba(X_test_scaled)[:, 1]
 
 print("Done.\n")
+
+
+# SECTION 1 - Confusion Matrix Deep Dive
+print("=" * 60)
+print("SECTION 1  CONFUSION MATRIX EXPLAINED (XGBoost, t=0.5)")
+print("=" * 60)
+
+xgb_pred = (xgb_proba >= 0.5).astype(int)
+tn, fp, fn, tp = confusion_matrix(y_test, xgb_pred).ravel()
+total = tn + fp + fn + tp
+
+print(f"""
+Predicted          LEGITIMATE      PHISHING
+Actual LEGITIMATE  TN={tn:>7,}    FP={fp:>7,}
+Actual PHISHING    FN={fn:>7,}    TP={tp:>7,}
+
+What each cell means for your users:
+  TN = {tn:,} ({tn/total*100:.1f}%)
+       True Negatives  legitimate sites correctly allowed through.
+       User browses normally with no interruption. 
+
+  FP = {fp:,} ({fp/total*100:.1f}%)
+       False Positives  legitimate sites wrongly blocked.
+       User sees the warning page on a safe site. Annoying but
+       not dangerous  they can click "continue anyway". 
+
+  FN = {fn:,} ({fn/total*100:.1f}%)
+       False Negatives  phishing sites that slipped through.
+       User visits a phishing site with NO warning shown.
+       This is the dangerous failure mode. 
+
+  TP = {tp:,} ({tp/total*100:.1f}%)
+       True Positives  phishing sites correctly blocked.
+       User sees the full-screen warning. System working. 
+
+Phishing catch rate:  {tp/(tp+fn)*100:.2f}%  ({tp:,} of {tp+fn:,} blocked)
+False alarm rate:     {fp/(fp+tn)*100:.2f}%  ({fp:,} of {fp+tn:,} legitimate sites)
+""")
