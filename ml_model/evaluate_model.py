@@ -91,3 +91,53 @@ What each cell means for your users:
 Phishing catch rate:  {tp/(tp+fn)*100:.2f}%  ({tp:,} of {tp+fn:,} blocked)
 False alarm rate:     {fp/(fp+tn)*100:.2f}%  ({fp:,} of {fp+tn:,} legitimate sites)
 """)
+
+
+# SECTION 2 - Threshold Analysis
+# WHY THIS MATTERS:
+#   The default threshold of 0.5 means: "if the model is more
+#   than 50% confident it's phishing, block it." But you can
+#   tune this. A lower threshold (0.3) catches more phishing
+#   but also generates more false alarms. A higher threshold
+#   (0.7) has fewer false alarms but misses more phishing.
+#   This tradeoff is a core concept in applied ML.
+print("=" * 60)
+print("SECTION 2  THRESHOLD ANALYSIS")
+print("=" * 60)
+print("Lower threshold = catch more phishing ( Recall) "
+      "but more false alarms ( Precision)")
+print("Higher threshold = fewer false alarms ( Precision) "
+      "but miss more phishing ( Recall)\n")
+
+thresholds = [0.3, 0.4, 0.5, 0.6, 0.7]
+print(f"  {'Threshold':<12} {'Precision':<12} {'Recall':<12} "
+      f"{'F1':<12} {'FP':<8} {'FN':<8}")
+print("  " + "-" * 65)
+
+threshold_results = []
+for t in thresholds:
+    pred = (xgb_proba >= t).astype(int)
+    p  = precision_score(y_test, pred)
+    r  = recall_score(y_test, pred)
+    f1 = f1_score(y_test, pred)
+    tn_, fp_, fn_, tp_ = confusion_matrix(y_test, pred).ravel()
+    marker = "  default" if t == 0.5 else ""
+    print(f"  {t:<12} {p:<12.4f} {r:<12.4f} "
+          f"{f1:<12.4f} {int(fp_):<8} {int(fn_):<8}{marker}")
+    threshold_results.append({
+        "threshold": t, "precision": round(p, 4),
+        "recall": round(r, 4), "f1": round(f1, 4),
+        "fp": int(fp_), "fn": int(fn_)
+    })
+
+print("""
+Reading this table for your report:
+  At t=0.3: recall is highest  model catches the most phishing
+             but generates the most false alarms (highest FP).
+  At t=0.5: balanced  the default we use in production.
+  At t=0.7: precision is highest  fewest false alarms but
+             misses more phishing (highest FN, most dangerous).
+
+For a phishing detector, erring toward lower thresholds
+(more recall, fewer missed phishing) is the safer choice.
+""")
