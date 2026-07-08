@@ -141,3 +141,19 @@ Reading this table for your report:
 For a phishing detector, erring toward lower thresholds
 (more recall, fewer missed phishing) is the safer choice.
 """)
+
+
+# SECTION 3 - LR vs XGBoost detailed comparison
+print("=" * 60)
+print("SECTION 3  LR vs XGBoost DETAILED COMPARISON")
+print("=" * 60)
+
+lr_pred = (lr_proba >= 0.5).astype(int)
+
+print("\nLogistic Regression Classification Report:")
+print(classification_report(y_test, lr_pred,
+      target_names=["Legitimate", "Phishing"]))
+
+print("XGBoost Classification Report:")
+print(classification_report(y_test, xgb_pred,
+      target_names=["Legitimate", "Phishing"]))
