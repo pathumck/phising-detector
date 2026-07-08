@@ -157,3 +157,48 @@ print(classification_report(y_test, lr_pred,
 print("XGBoost Classification Report:")
 print(classification_report(y_test, xgb_pred,
       target_names=["Legitimate", "Phishing"]))
+
+
+# SECTION 4 - Sample False Positives and False Negatives
+print("=" * 60)
+print("SECTION 4  SAMPLE ERRORS (XGBoost, t=0.5)")
+print("=" * 60)
+
+y_test_arr    = y_test.reset_index(drop=True).values
+xgb_pred_arr  = xgb_pred
+
+# False Positives - legitimate sites wrongly flagged
+fp_mask = (y_test_arr == 0) & (xgb_pred_arr == 1)
+fp_urls = urls_test[fp_mask]["URL"].head(5).tolist()
+fp_conf = xgb_proba[fp_mask][:5]
+
+print("\nFalse Positives (legitimate URLs wrongly blocked):")
+for url, conf in zip(fp_urls, fp_conf):
+    print(f"  conf={conf:.3f}  {url[:80]}")
+
+# False Negatives - phishing sites that slipped through
+fn_mask = (y_test_arr == 1) & (xgb_pred_arr == 0)
+fn_urls = urls_test[fn_mask]["URL"].head(5).tolist()
+fn_conf = xgb_proba[fn_mask][:5]
+
+print("\nFalse Negatives (phishing URLs that slipped through):")
+for url, conf in zip(fn_urls, fn_conf):
+    print(f"  conf={conf:.3f}  {url[:80]}")
+
+print("""
+Why False Negatives happen:
+  These phishing URLs look structurally "clean"  short, HTTPS,
+  no suspicious keywords, no high-risk TLD. They rely on brand
+  impersonation or social engineering that lexical features alone
+  cannot detect. This is exactly why Layers 1-3 of the hybrid
+  system (blacklist, whitelist, lookalike detection) exist 
+  to catch what the ML model misses.
+
+Why False Positives happen:
+  These legitimate URLs have unusual structural properties that
+  overlap with phishing patterns  very long paths, many query
+  parameters, numeric subdomains, or suspicious-looking keywords
+  in the path (e.g. /account/ or /login/ on a real bank site).
+""")
+
+
