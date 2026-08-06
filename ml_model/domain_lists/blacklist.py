@@ -16,3 +16,82 @@ BLACKLIST: set[str] = set()
 _HERE           = os.path.dirname(os.path.abspath(__file__))
 _PHISHTANK_PATH = os.path.join(_HERE, "phishtank.csv")
 _RUNTIME_PATH   = os.path.join(_HERE, "blacklist.txt")
+
+# Domain validation regex
+_DOMAIN_RE = re.compile(
+    r"^[a-z0-9]([a-z0-9\-\.]{0,250}[a-z0-9])?$"
+)
+
+# Multi-part TLDs for domain extraction
+_MULTI_PART_TLDS = {
+    "co.uk", "gov.uk", "ac.uk", "org.uk", "net.uk",
+    "gov.au", "com.au", "net.au", "org.au", "edu.au",
+    "co.nz", "org.nz", "govt.nz",
+    "gov.lk", "ac.lk", "edu.lk", "com.lk", "org.lk",
+}
+
+
+# Shared platforms never blacklisted at domain level
+_SHARED_PLATFORMS = {
+    "google.com", "google.co.uk", "google.com.au",
+    "google.co.in", "google.de", "google.fr",
+    "linkedin.com", "facebook.com", "twitter.com", "x.com",
+    "instagram.com", "tiktok.com", "reddit.com", "pinterest.com",
+    "wixsite.com", "wix.com", "weebly.com",
+    "squarespace.com", "webflow.io", "carrd.co",
+    "github.io", "github.com", "gitlab.io",
+    "replit.app", "replit.com", "glitch.me",
+    "netlify.app", "vercel.app", "pages.dev",
+    "web.app", "firebaseapp.com",
+    "flowcode.com", "linktr.ee", "bio.link",
+    "beacons.ai", "campsite.bio",
+    "drive.google.com", "docs.google.com",
+    "sharepoint.com", "onedrive.live.com",
+    "dropbox.com", "box.com",
+    "blogspot.com", "wordpress.com",
+    "medium.com", "substack.com",
+    "notion.so", "sites.google.com",
+}
+
+
+def _extract_registrable_domain(hostname: str) -> str:
+    """Extract registrable domain by stripping subdomains."""
+    parts = hostname.lower().strip().split(".")
+    if len(parts) < 2:
+        return hostname.lower()
+
+    candidate = ".".join(parts[-2:])
+    if candidate in _MULTI_PART_TLDS:
+        return ".".join(parts[-3:]) if len(parts) >= 3 \
+               else hostname.lower()
+
+    return ".".join(parts[-2:])
+
+
+def _extract_domain(url: str) -> str | None:
+    """Extract registrable domain from a full URL."""
+    try:
+        url = str(url).strip()
+        if not url:
+            return None
+
+        if not url.startswith(("http://", "https://")):
+            url = "http://" + url
+
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+
+        if not host:
+            return None
+
+        return _extract_registrable_domain(host)
+
+    except Exception:
+        return None
+
+
+def _is_valid_domain(domain: str) -> bool:
+    """Check if domain matches basic format requirements."""
+    return bool(domain and _DOMAIN_RE.match(domain))
+
+
