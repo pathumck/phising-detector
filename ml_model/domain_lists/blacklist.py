@@ -160,3 +160,17 @@ def initialise_blacklist() -> None:
     _load_runtime()
     print(f"[blacklist] Ready. "
           f"Total unique domains: {len(BLACKLIST):,}")
+    
+
+def clean_against_whitelist(whitelist: set) -> None:
+    """Remove whitelist overlaps from BLACKLIST set."""
+    global BLACKLIST
+    before   = len(BLACKLIST)
+    overlap  = BLACKLIST & whitelist
+    BLACKLIST = BLACKLIST - whitelist
+    removed  = before - len(BLACKLIST)
+    if removed > 0:
+        print(f"[blacklist] Removed {removed} domains also "
+              f"in Tranco whitelist (shared platform cleanup): "
+              f"{sorted(overlap)[:10]}"
+              f"{'...' if len(overlap) > 10 else ''}")
