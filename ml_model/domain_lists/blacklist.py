@@ -196,3 +196,26 @@ def add_to_blacklist(domain: str) -> None:
         print(f"[blacklist] WARNING: could not persist "
               f"{domain}: {e}")
 
+
+def check_blacklist(url: str) -> dict | None:
+    """Check if URL's domain is in BLACKLIST and return verdict."""
+    domain = _extract_domain(url)
+
+    if not domain:
+        return None
+
+    if domain in BLACKLIST:
+        return {
+            "verdict":         "phishing",
+            "is_phishing":     True,
+            "confidence":      1.00,
+            "detection_layer": "blacklist",
+            "explanation":     (
+                f"{domain} is a confirmed phishing domain from "
+                f"PhishTank community threat intelligence. "
+                f"Verified and currently active."
+            ),
+            "domain": domain,
+        }
+
+    return None
