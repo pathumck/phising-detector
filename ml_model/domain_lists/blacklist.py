@@ -174,3 +174,25 @@ def clean_against_whitelist(whitelist: set) -> None:
               f"in Tranco whitelist (shared platform cleanup): "
               f"{sorted(overlap)[:10]}"
               f"{'...' if len(overlap) > 10 else ''}")
+        
+
+def add_to_blacklist(domain: str) -> None:
+    """Add a newly detected phishing domain to memory and disk."""
+    domain = domain.lower().strip()
+
+    if not domain or not _is_valid_domain(domain):
+        return
+
+    if domain in BLACKLIST:
+        return
+
+    BLACKLIST.add(domain)
+
+    try:
+        with open(_RUNTIME_PATH, "a", encoding="utf-8") as f:
+            f.write(domain + "\n")
+        print(f"[blacklist] Runtime learned + persisted: {domain}")
+    except Exception as e:
+        print(f"[blacklist] WARNING: could not persist "
+              f"{domain}: {e}")
+
