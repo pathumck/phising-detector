@@ -134,3 +134,20 @@ def _load_phishtank() -> int:
     return loaded
 
 
+def _load_runtime() -> int:
+    """Load runtime-learned domains from blacklist.txt."""
+    if not os.path.exists(_RUNTIME_PATH):
+        return 0
+
+    loaded = 0
+    with open(_RUNTIME_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            domain = line.strip().lower()
+            if domain and _is_valid_domain(domain):
+                BLACKLIST.add(domain)
+                loaded += 1
+
+    if loaded > 0:
+        print(f"[blacklist] Runtime learned: {loaded:,} domains "
+              f"from blacklist.txt")
+    return loaded
