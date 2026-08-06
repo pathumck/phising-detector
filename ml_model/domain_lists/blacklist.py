@@ -95,3 +95,42 @@ def _is_valid_domain(domain: str) -> bool:
     return bool(domain and _DOMAIN_RE.match(domain))
 
 
+def _load_phishtank() -> int:
+    """Load verified active PhishTank CSV domains into BLACKLIST set."""
+    if not os.path.exists(_PHISHTANK_PATH):
+        print(f"[blacklist] WARNING: PhishTank CSV not found.")
+        print(f"            Expected: {_PHISHTANK_PATH}")
+        return 0
+
+    loaded  = 0
+    skipped = 0
+
+    with open(_PHISHTANK_PATH, "r", encoding="utf-8",
+              errors="replace") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            verified = row.get("verified", "").strip().lower()
+            online   = row.get("online",   "").strip().lower()
+
+            if verified != "yes" or online != "yes":
+                skipped += 1
+                continue
+
+            url    = row.get("url", "").strip()
+            domain = _extract_domain(url)
+
+            if not domain or not _is_valid_domain(domain):
+                continue
+
+            if domain in _SHARED_PLATFORMS:
+                skipped += 1
+                continue
+
+            BLACKLIST.add(domain)
+            loaded += 1
+
+    print(f"[blacklist] PhishTank: {loaded:,} domains loaded  "
+          f"({skipped:,} unverified/offline skipped).")
+    return loaded
+
+
