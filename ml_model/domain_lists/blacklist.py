@@ -151,3 +151,12 @@ def _load_runtime() -> int:
         print(f"[blacklist] Runtime learned: {loaded:,} domains "
               f"from blacklist.txt")
     return loaded
+
+
+def initialise_blacklist() -> None:
+    """Load all blacklist sources into the unified BLACKLIST set."""
+    print("[blacklist] Initialising...")
+    _load_phishtank()
+    _load_runtime()
+    print(f"[blacklist] Ready. "
+          f"Total unique domains: {len(BLACKLIST):,}")
