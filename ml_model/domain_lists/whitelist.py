@@ -44,6 +44,28 @@ MULTI_PART_TLDS = {
     "gov.lk", "ac.lk", "edu.lk", "com.lk", "org.lk",
 }
 
+# Generic words excluded from brand name lookalike detection
+_GENERIC_NAMES = {
+    "www", "mail", "email", "smtp", "ftp", "ssh",
+    "cdn", "api", "app", "web", "blog", "shop",
+    "edu", "gov", "com", "net", "org", "int",
+    "m", "en", "de", "fr", "es", "jp", "cn",
+    "static", "media", "images", "assets", "files",
+    "login", "auth", "secure", "portal", "admin",
+    "support", "help", "news", "home", "info",
+}
+
+# Government and education TLDs treated as safe
+GOVERNMENT_TLDS = {
+    "gov.au", "gov.uk", "gov.lk", "gov.in", "gov.nz",
+    "gov.sg", "gov.za", "gov.ie", "gov.us", "usa.gov",
+    "govt.nz", "gc.ca",
+    "edu.au", "ac.uk", "ac.lk", "ac.nz", "ac.in",
+    "edu.lk",
+    "nhs.uk", "police.uk", "mod.uk",
+    "edu", "gov",
+}
+
 
 def _extract_registrable_domain(hostname: str) -> str:
     """Strip subdomains and return the registrable domain only."""
