@@ -110,3 +110,47 @@ def _normalize_url_and_host(raw_url: str):
     return decoded_url, host
 
 
+def _check_open_redirect_or_social_media(url: str, current_host: str, depth: int = 0) -> dict | None:
+    """
+    Inspects queries on whitelisted domains to check if they act as open redirectors.
+    Includes depth tracking to prevent infinite recursion on circular redirects.
+    """
+    if depth > 2:
+        return None
+
+    REDIRECT_PARAMS = {
+        "q", "url", "u", "target", "dest", "destination", 
+        "redirect", "redirect_url", "link", "out", "next", "continue"
+    }
+
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query)
+
+    for param, values in query_params.items():
+        if param.lower() in REDIRECT_PARAMS:
+            for val in values:
+                val = unquote(val).strip()
+                if val.startswith(("http://", "https://", "www.")):
+                    _, inner_host = _normalize_url_and_host(val)
+                    
+                    # Ensure redirect target isn't internal or a direct sub-domain of current host
+                    if inner_host and not inner_host.endswith(current_host):
+                        # Recursive check on wrapped URL passing incremented depth
+                        inner_res = check_url(val, depth=depth + 1)
+                        
+                        # If wrapped target is malicious, flag immediately
+                        if inner_res["is_phishing"]:
+                            inner_res["explanation"] = (
+                                f"Open Redirect Attack via '{current_host}': "
+                                f"Redirects to malicious target -> {inner_res['explanation']}"
+                            )
+                            inner_res["detection_layer"] = f"open_redirect_{inner_res['detection_layer']}"
+                            return inner_res
+                        
+                        # If target is not safe/whitelisted, strip the whitelist wrapper safety 
+                        # and return the inner target's evaluation result directly
+                        if inner_res["detection_layer"] != "whitelist":
+                            return inner_res
+
+    return None
+
