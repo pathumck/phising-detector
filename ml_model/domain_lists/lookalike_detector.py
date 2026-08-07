@@ -1,3 +1,20 @@
+
+"""
+Layer 3 of the hybrid detection system.
+
+Three methods in strict execution order (stops at first match):
+
+Method C — Homograph Attack (FIRST)
+Unicode/Cyrillic characters visually identical to Latin.
+Fires only when the brand contains non-ASCII characters.
+
+Method A — TLD Swap + Subdomain Impersonation (SECOND)
+Exact brand under a different TLD or brand placed as a subdomain.
+
+Method B — Levenshtein Typosquatting (THIRD)
+One or two keystrokes from a trusted brand name.
+"""
+
 import unicodedata
 from urllib.parse import urlparse
 import domain_lists.whitelist as _whitelist
@@ -240,3 +257,32 @@ def _check_typosquatting(hostname: str, brand: str) -> dict | None:
         }
 
     return None
+
+
+def check_lookalike(url: str) -> dict | None:
+    """Run all three lookalike methods in order C -> A -> B."""
+    try:
+        hostname = _clean_hostname(url)
+        if not hostname:
+            return None
+
+        brand = _extract_brand(hostname)
+        if not brand:
+            return None
+
+        result = _check_homograph(hostname, brand)
+        if result:
+            return result
+
+        result = _check_tld_swap(hostname, brand)
+        if result:
+            return result
+
+        result = _check_typosquatting(hostname, brand)
+        if result:
+            return result
+
+        return None
+
+    except Exception:
+        return None
