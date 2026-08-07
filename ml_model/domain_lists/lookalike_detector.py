@@ -134,3 +134,49 @@ def _check_homograph(hostname: str, brand: str) -> dict | None:
             "domain": hostname,
         }
     return None
+
+
+def _check_tld_swap(hostname: str, brand: str) -> dict | None:
+    """Method A — Detect TLD swap and subdomain impersonation."""
+    if brand in _whitelist.WHITELIST_NAMES:
+        return {
+            "verdict": "phishing",
+            "is_phishing": True,
+            "confidence": 0.92,
+            "detection_layer": "lookalike_exact_lookalike",
+            "explanation": (
+                f"'{hostname}' uses the exact brand name "
+                f"'{brand}' of a trusted domain under a different TLD."
+            ),
+            "domain": hostname,
+        }
+
+    _GENERIC_SUBDOMAINS = {
+        "www", "mail", "email", "ftp", "cdn", "api",
+        "app", "web", "blog", "m", "en", "static",
+        "media", "images", "shop", "edu", "gov",
+        "support", "help", "news", "portal", "admin",
+    }
+
+    parts = hostname.split(".")
+    subdomains = parts[:-2]
+
+    for sub in subdomains:
+        if sub in _GENERIC_SUBDOMAINS:
+            continue
+        if sub in _whitelist.WHITELIST_NAMES:
+            actual_domain = ".".join(parts[-2:])
+            return {
+                "verdict": "phishing",
+                "is_phishing": True,
+                "confidence": 0.92,
+                "detection_layer": "lookalike_exact_lookalike",
+                "explanation": (
+                    f"'{hostname}' places the trusted brand name "
+                    f"'{sub}' as a subdomain of the unrelated "
+                    f"domain '{actual_domain}'."
+                ),
+                "domain": hostname,
+            }
+
+    return None
