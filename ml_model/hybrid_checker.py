@@ -1,3 +1,20 @@
+"""
+Master orchestrator for the four-layer cascade detection system.
+
+Single public function: check_url(url) → dict
+
+Four-layer cascade — strict order, stops at first verdict:
+  Layer 1  Blacklist         confidence 1.00
+  Layer 2  Whitelist         confidence 0.99 (With Open-Redirect Inspection)
+  Layer 3  Lookalike         
+           Homograph         confidence 0.95
+           TLD swap          confidence 0.92
+           Typosquatting     confidence 0.92 / 0.75
+  Layer 4  ML Model          confidence = model probability
+           Auto-learn: probability > 0.95 → add to blacklist
+"""
+
+
 import os
 import re
 import sys
