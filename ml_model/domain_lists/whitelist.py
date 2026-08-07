@@ -35,3 +35,31 @@ WHITELIST: set[str] = set()
 
 # Brand names used by Layer 3 lookalike detector
 WHITELIST_NAMES: set[str] = set()
+
+# Multi-part TLDs required for correct registrable domain extraction
+MULTI_PART_TLDS = {
+    "co.uk", "gov.uk", "ac.uk", "org.uk", "net.uk",
+    "gov.au", "com.au", "net.au", "org.au", "edu.au",
+    "co.nz", "org.nz", "govt.nz",
+    "gov.lk", "ac.lk", "edu.lk", "com.lk", "org.lk",
+}
+
+
+def _extract_registrable_domain(hostname: str) -> str:
+    """Strip subdomains and return the registrable domain only."""
+    parts = hostname.lower().strip().split(".")
+
+    if len(parts) < 2:
+        return hostname.lower()
+
+    candidate = ".".join(parts[-2:])
+    if candidate in MULTI_PART_TLDS:
+        return ".".join(parts[-3:]) if len(parts) >= 3 \
+               else hostname.lower()
+
+    return ".".join(parts[-2:])
+
+
+def _extract_brand_name(registrable: str) -> str:
+    """Extract brand name from a registrable domain."""
+    return registrable.split(".")[0]
