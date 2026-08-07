@@ -154,3 +154,107 @@ def _check_open_redirect_or_social_media(url: str, current_host: str, depth: int
 
     return None
 
+
+def check_url(url: str, depth: int = 0) -> dict:
+    """
+    Run the four-layer cascade on a single URL.
+
+    Parameters
+    ----------
+    url : str
+        Raw URL from Chrome extension, social media link, or test script.
+    depth : int
+        Internal recursion tracker for open redirect unwrapping.
+
+    Returns
+    -------
+    dict
+        Standard output format across all layers.
+    """
+    response = {
+        "verdict": "safe",
+        "is_phishing": False,
+        "confidence": 0.0,
+        "detection_layer": "none",
+        "explanation": "",
+        "ml_score": None,
+        "domain": "",
+        "error": None,
+    }
+
+    try:
+        normalized_url, host = _normalize_url_and_host(url)
+        if not normalized_url or not host:
+            response["error"] = "Empty or unparseable URL received"
+            return response
+
+        response["domain"] = host
+
+        # Layer 1: Blacklist
+        result = check_blacklist(normalized_url)
+        if result:
+            response.update(result)
+            return response
+
+        # Layer 2: Whitelist and Open Redirect Inspection
+        result = check_whitelist(normalized_url)
+        if result:
+            redirect_result = _check_open_redirect_or_social_media(normalized_url, host, depth=depth)
+            if redirect_result:
+                return redirect_result
+
+            response.update(result)
+            return response
+
+        # Layer 3: Lookalike Detection
+        result = check_lookalike(normalized_url)
+        if result:
+            response.update(result)
+            return response
+
+        # Layer 4: Machine Learning Model
+        features = extract_features(normalized_url)
+
+        features_input = (
+            _scaler.transform([features])
+            if _uses_scaler and _scaler is not None
+            else [features]
+        )
+
+        proba = float(_model.predict_proba(features_input)[0][1])
+        response["ml_score"] = round(proba, 4)
+
+        if proba > 0.5:
+            response.update({
+                "verdict": "phishing",
+                "is_phishing": True,
+                "confidence": round(proba, 4),
+                "detection_layer": "ml_model",
+                "explanation": (
+                    f"Machine learning model classified this URL "
+                    f"as phishing with {proba * 100:.1f}% probability "
+                    f"based on structural and lexical features."
+                ),
+            })
+            
+            SHARED_HOSTS = {"github.io", "wordpress.com", "vercel.app", "netlify.app", "firebaseapp.com"}
+            if proba > 0.95 and host not in SHARED_HOSTS:
+                add_to_blacklist(host)
+        else:
+            response.update({
+                "verdict": "safe",
+                "is_phishing": False,
+                "confidence": round(1 - proba, 4),
+                "detection_layer": "ml_model",
+                "explanation": (
+                    f"URL appears legitimate based on structural "
+                    f"analysis ({(1 - proba) * 100:.1f}% confidence)."
+                ),
+            })
+
+        return response
+
+    except Exception as e:
+        response["error"] = str(e)
+        response["explanation"] = f"Detection error: {str(e)}"
+        return response
