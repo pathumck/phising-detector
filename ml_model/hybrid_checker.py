@@ -26,3 +26,32 @@ _model       = None
 _scaler      = None
 _uses_scaler = False
 _model_name  = "unknown"
+
+
+def _load_model() -> None:
+    """Load production model, scaler, and metadata from disk."""
+    global _model, _scaler, _uses_scaler, _model_name
+
+    model_path  = os.path.join(_MODEL_DIR, "phishing_model.pkl")
+    scaler_path = os.path.join(_MODEL_DIR, "scaler.pkl")
+    meta_path   = os.path.join(_MODEL_DIR, "model_metadata.json")
+
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"Model not found: {model_path}\n"
+            f"Run ml_model/train_model.py first."
+        )
+
+    _model = joblib.load(model_path)
+
+    if os.path.exists(meta_path):
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        _uses_scaler = meta.get("uses_scaler", False)
+        _model_name  = meta.get("selected_model", "unknown")
+
+    if _uses_scaler and os.path.exists(scaler_path):
+        _scaler = joblib.load(scaler_path)
+
+    print(f"[hybrid] Model: {_model_name}  "
+          f"| Scaler: {'yes' if _uses_scaler else 'no'}")
