@@ -109,3 +109,28 @@ def _levenshtein(s1: str, s2: str, max_dist: int = 2) -> int:
         prev = curr
 
     return prev[n]
+
+
+def _check_homograph(hostname: str, brand: str) -> dict | None:
+    """Method C — Detect Unicode homograph / Cyrillic substitution attacks."""
+    if brand.isascii():
+        return None
+
+    normalised = _normalise_homograph(brand)
+
+    if brand == normalised:
+        return None
+
+    if normalised in _whitelist.WHITELIST_NAMES:
+        return {
+            "verdict": "phishing",
+            "is_phishing": True,
+            "confidence": 0.95,
+            "detection_layer": "lookalike_homograph",
+            "explanation": (
+                f"'{hostname}' uses Unicode character substitution "
+                f"to visually impersonate '{normalised}'."
+            ),
+            "domain": hostname,
+        }
+    return None
