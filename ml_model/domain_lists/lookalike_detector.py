@@ -28,3 +28,33 @@ DIGIT_TO_LETTER = {
     "7": "t",
     "8": "b",
 }
+
+
+def _extract_brand(hostname: str) -> str:
+    """Extract brand name from a full hostname by removing subdomains and TLD."""
+    hostname = hostname.lower().strip()
+    parts = hostname.split(".")
+
+    if len(parts) < 2:
+        return hostname
+
+    if len(parts) >= 3 and \
+            ".".join(parts[-2:]) in _whitelist.MULTI_PART_TLDS:
+        return parts[-3]
+
+    return parts[-2]
+
+
+def _clean_hostname(url: str) -> str | None:
+    """Parse URL and return a clean lowercase hostname."""
+    try:
+        if not url.startswith(("http://", "https://")):
+            url = "http://" + url
+
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
+
+        return hostname if hostname else None
+
+    except Exception:
+        return None
