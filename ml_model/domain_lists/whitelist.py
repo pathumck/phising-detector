@@ -153,3 +153,57 @@ def _load_fallback() -> None:
 
     print(f"[whitelist] Fallback: {len(WHITELIST)} domains, "
           f"{len(WHITELIST_NAMES)} brand names.")    
+    
+
+def check_whitelist(url: str) -> dict | None:
+    """Check if URL belongs to a Tranco-whitelisted domain."""
+    try:
+        if not url.startswith(("http://", "https://")):
+            url = "http://" + url
+
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
+
+        if not hostname:
+            return None
+
+        registrable = _extract_registrable_domain(hostname)
+
+        parts = hostname.split(".")
+        suffix = ".".join(parts[-2:])
+        tld = parts[-1]
+
+        if suffix in GOVERNMENT_TLDS or tld in GOVERNMENT_TLDS:
+            return {
+                "verdict": "safe",
+                "is_phishing": False,
+                "confidence": 0.99,
+                "detection_layer": "whitelist",
+                "explanation": (
+                    f"{registrable} uses a verified government or "
+                    f"educational top-level domain (.{suffix}), "
+                    f"which requires institutional verification "
+                    f"to register."
+                ),
+                "domain": registrable,
+            }
+
+        if registrable in WHITELIST:
+            return {
+                "verdict": "safe",
+                "is_phishing": False,
+                "confidence": 0.99,
+                "detection_layer": "whitelist",
+                "explanation": (
+                    f"{registrable} is ranked in the Tranco global "
+                    f"top {WHITELIST_TOP_N:,} most visited domains "
+                    f"worldwide. Verified trusted domain."
+                ),
+                "domain": registrable,
+            }
+
+        return None
+
+    except Exception:
+        return None
+
