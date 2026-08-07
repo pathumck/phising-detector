@@ -58,3 +58,21 @@ def _clean_hostname(url: str) -> str | None:
 
     except Exception:
         return None
+
+
+def _normalise_homograph(name: str) -> str:
+    """Expose hidden Unicode character substitutions in a domain name."""
+    decomposed = unicodedata.normalize("NFKD", name)
+    stripped = "".join(
+        c for c in decomposed
+        if not unicodedata.combining(c)
+    )
+    latin = "".join(
+        CYRILLIC_TO_LATIN.get(c, c) for c in stripped
+    )
+    return latin.lower()
+
+
+def _normalise_digits(name: str) -> str:
+    """Map digit to letter substitutions for typosquatting checks."""
+    return "".join(DIGIT_TO_LETTER.get(c, c) for c in name.lower())
