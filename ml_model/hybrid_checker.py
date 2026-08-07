@@ -77,3 +77,36 @@ def _initialise() -> None:
 
 
 _initialise()
+
+
+# Helper Functions: URL Normalization & Open Redirect Extractor
+_TRAILING_FQDN_DOT_RE = re.compile(r'\.(?=[/?#]|$)')
+
+
+def _normalize_url_and_host(raw_url: str):
+    """
+    Decodes, normalizes, and extracts the target hostname safely.
+    Handles userinfo (@), port numbers, and FQDN trailing dots.
+    """
+    raw_url = str(raw_url).strip()
+    if not raw_url:
+        return "", ""
+
+    if not raw_url.startswith(("http://", "https://")):
+        raw_url = "http://" + raw_url
+
+    # Iterative unquoting to handle double/triple percent encoding tricks
+    decoded_url = raw_url
+    for _ in range(3):
+        new_url = unquote(decoded_url)
+        if new_url == decoded_url:
+            break
+        decoded_url = new_url
+
+    decoded_url = _TRAILING_FQDN_DOT_RE.sub("", decoded_url, count=1)
+    parsed = urlparse(decoded_url)
+    host = (parsed.hostname or "").rstrip(".").lower()
+
+    return decoded_url, host
+
+
