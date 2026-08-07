@@ -130,3 +130,26 @@ def initialise_whitelist(top_n: int = WHITELIST_TOP_N) -> None:
     print(f"[whitelist] Loaded {loaded:,} Tranco domains: "
           f"{len(WHITELIST):,} registrable domains, "
           f"{len(WHITELIST_NAMES):,} brand names.")
+    
+
+def _load_fallback() -> None:
+    """Load fallback whitelist if Tranco CSV is missing."""
+    global WHITELIST, WHITELIST_NAMES
+
+    core = {
+        "google.com", "youtube.com", "facebook.com",
+        "twitter.com", "instagram.com", "linkedin.com",
+        "amazon.com", "microsoft.com", "apple.com",
+        "netflix.com", "wikipedia.org", "reddit.com",
+        "github.com", "stackoverflow.com", "paypal.com",
+        "ebay.com", "bbc.co.uk", "bbc.com", "cnn.com",
+        "yahoo.com", "whatsapp.com", "tiktok.com",
+        "zoom.us", "dropbox.com", "spotify.com",
+        "twitch.tv", "discord.com", "cloudflare.com",
+    }
+
+    WHITELIST = core.copy()
+    WHITELIST_NAMES = {_extract_brand_name(d) for d in core}
+
+    print(f"[whitelist] Fallback: {len(WHITELIST)} domains, "
+          f"{len(WHITELIST_NAMES)} brand names.")    
