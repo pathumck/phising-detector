@@ -180,3 +180,63 @@ def _check_tld_swap(hostname: str, brand: str) -> dict | None:
             }
 
     return None
+
+
+def _check_typosquatting(hostname: str, brand: str) -> dict | None:
+    """Method B — Detect Levenshtein distance typosquatting."""
+    compare_brand = _normalise_digits(brand)
+    digit_substituted = (compare_brand != brand)
+
+    best_dist = 999
+    best_match = None
+
+    for trusted in _whitelist.WHITELIST_NAMES:
+        dist = _levenshtein(compare_brand, trusted, max_dist=2)
+
+        if dist < best_dist:
+            best_dist = dist
+            best_match = trusted
+
+        if best_dist <= 1:
+            break
+
+    if best_dist == 0 and digit_substituted:
+        return {
+            "verdict": "phishing",
+            "is_phishing": True,
+            "confidence": 0.94,
+            "detection_layer": "lookalike_typosquatting",
+            "explanation": (
+                f"'{hostname}' matches trusted brand '{best_match}' "
+                f"via character-substitution typosquatting ('{brand}' -> '{compare_brand}')."
+            ),
+            "domain": hostname,
+        }
+
+    if best_dist == 1:
+        return {
+            "verdict": "phishing",
+            "is_phishing": True,
+            "confidence": 0.92,
+            "detection_layer": "lookalike_typosquatting",
+            "explanation": (
+                f"'{hostname}' is one edit away from "
+                f"trusted domain '{best_match}'."
+            ),
+            "domain": hostname,
+        }
+
+    if best_dist == 2:
+        return {
+            "verdict": "phishing",
+            "is_phishing": True,
+            "confidence": 0.75,
+            "detection_layer": "lookalike_typosquatting",
+            "explanation": (
+                f"'{hostname}' is two edits away from "
+                f"trusted domain '{best_match}'."
+            ),
+            "domain": hostname,
+        }
+
+    return None
