@@ -55,3 +55,25 @@ def _load_model() -> None:
 
     print(f"[hybrid] Model: {_model_name}  "
           f"| Scaler: {'yes' if _uses_scaler else 'no'}")
+
+
+# Initialisation guard
+_initialised = False
+
+
+def _initialise() -> None:
+    """Full system startup — runs exactly once at module import."""
+    global _initialised
+    if _initialised:
+        return
+    _initialised = True
+
+    print("\n[hybrid] ── Starting detection system ──")
+    initialise_whitelist()
+    initialise_blacklist()
+    clean_against_whitelist(WHITELIST)
+    _load_model()
+    print("[hybrid] ── All layers ready ──\n")
+
+
+_initialise()
