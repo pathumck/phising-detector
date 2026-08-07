@@ -85,3 +85,48 @@ def _extract_registrable_domain(hostname: str) -> str:
 def _extract_brand_name(registrable: str) -> str:
     """Extract brand name from a registrable domain."""
     return registrable.split(".")[0]
+
+
+def initialise_whitelist(top_n: int = WHITELIST_TOP_N) -> None:
+    """Load Tranco CSV and populate WHITELIST and WHITELIST_NAMES."""
+    global WHITELIST, WHITELIST_NAMES
+
+    if not os.path.exists(_CSV_PATH):
+        print(f"[whitelist] WARNING: Tranco CSV not found at:")
+        print(f"            {_CSV_PATH}")
+        print(f"[whitelist] Download from https://tranco-list.eu/top-1m.csv.zip")
+        print(f"[whitelist] Using fallback hardcoded list.")
+        _load_fallback()
+        return
+
+    WHITELIST = set()
+    WHITELIST_NAMES = set()
+    loaded = 0
+
+    with open(_CSV_PATH, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) < 2:
+                continue
+            try:
+                rank = int(row[0])
+                domain = row[1].strip().lower()
+            except ValueError:
+                continue
+
+            if rank > top_n:
+                break
+
+            registrable = _extract_registrable_domain(domain)
+            brand = _extract_brand_name(registrable)
+
+            if brand not in _GENERIC_NAMES:
+                WHITELIST.add(registrable)
+                WHITELIST_NAMES.add(brand)
+            else:
+                WHITELIST.add(registrable)
+            loaded += 1
+
+    print(f"[whitelist] Loaded {loaded:,} Tranco domains: "
+          f"{len(WHITELIST):,} registrable domains, "
+          f"{len(WHITELIST_NAMES):,} brand names.")
