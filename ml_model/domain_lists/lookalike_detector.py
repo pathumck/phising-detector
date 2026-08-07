@@ -76,3 +76,36 @@ def _normalise_homograph(name: str) -> str:
 def _normalise_digits(name: str) -> str:
     """Map digit to letter substitutions for typosquatting checks."""
     return "".join(DIGIT_TO_LETTER.get(c, c) for c in name.lower())
+
+
+def _levenshtein(s1: str, s2: str, max_dist: int = 2) -> int:
+    """Calculate Levenshtein edit distance with early termination."""
+    if abs(len(s1) - len(s2)) > max_dist:
+        return max_dist + 1
+
+    m, n = len(s1), len(s2)
+    prev = list(range(n + 1))
+
+    for i in range(1, m + 1):
+        curr = [i] + [0] * n
+        row_min = i
+
+        for j in range(1, n + 1):
+            if s1[i - 1] == s2[j - 1]:
+                curr[j] = prev[j - 1]
+            else:
+                curr[j] = 1 + min(
+                    prev[j],
+                    curr[j - 1],
+                    prev[j - 1],
+                )
+
+            if curr[j] < row_min:
+                row_min = curr[j]
+
+        if row_min > max_dist:
+            return max_dist + 1
+
+        prev = curr
+
+    return prev[n]
