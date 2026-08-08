@@ -27,3 +27,11 @@ app = Flask(__name__)
 # Configure Cross-Origin Resource Sharing
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+
+# Define helper function for URL normalization
+def _normalise_input_url(raw_url: str) -> str:
+    """Prepend default HTTP scheme if omitted."""
+    raw_url = (raw_url or "").strip()
+    if raw_url and not raw_url.startswith(("http://", "https://")):
+        raw_url = "http://" + raw_url
+    return raw_url
