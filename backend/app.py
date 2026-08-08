@@ -11,6 +11,10 @@ import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
+# Import local detection module and domain resources
+import hybrid_checker
+from domain_lists.blacklist import BLACKLIST
+from domain_lists.whitelist import WHITELIST
 
 # Configure module search path for local backend imports
 _HERE = os.path.dirname(os.path.abspath(__file__))
