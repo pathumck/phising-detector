@@ -35,3 +35,17 @@ def _normalise_input_url(raw_url: str) -> str:
     if raw_url and not raw_url.startswith(("http://", "https://")):
         raw_url = "http://" + raw_url
     return raw_url
+
+
+# Define route for system health check
+@app.route("/health", methods=["GET"])
+def health():
+    """Returns API and loaded model status."""
+    return jsonify({
+        "status": "ok",
+        "model_loaded": hybrid_checker._model is not None,
+        "model_name": hybrid_checker._model_name,
+        "uses_scaler": hybrid_checker._uses_scaler,
+        "blacklist_domains": len(BLACKLIST),
+        "whitelist_domains": len(WHITELIST),
+    }), 200
