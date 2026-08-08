@@ -109,3 +109,7 @@ def not_found(_e):
 def server_error(e):
     return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
+
+# Execute application server entry point
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False)
