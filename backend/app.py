@@ -98,3 +98,14 @@ def predict():
     return jsonify(result), 200
 
 
+# Define 404 error handler
+@app.errorhandler(404)
+def not_found(_e):
+    return jsonify({"error": "Not found. Use POST /predict or GET /health."}), 404
+
+
+# Define 500 error handler
+@app.errorhandler(500)
+def server_error(e):
+    return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
