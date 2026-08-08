@@ -49,3 +49,52 @@ def health():
         "blacklist_domains": len(BLACKLIST),
         "whitelist_domains": len(WHITELIST),
     }), 200
+
+
+# Define route for URL prediction and analysis
+@app.route("/predict", methods=["POST"])
+def predict():
+    """Runs url evaluation and returns verdict JSON."""
+    start = time.perf_counter()
+
+    # Extract and validate payload presence
+    data = request.get_json(silent=True)
+    if not data or "url" not in data:
+        return jsonify({
+            "verdict": "error",
+            "is_phishing": False,
+            "confidence": 0.0,
+            "detection_layer": "none",
+            "explanation": "Request body must be JSON with a 'url' field.",
+            "ml_score": None,
+            "domain": "",
+            "error": "missing 'url' field",
+        }), 400
+
+    # Extract and normalize the target URL
+    raw_url = data.get("url", "")
+    url = _normalise_input_url(raw_url)
+
+    # Validate non-empty URL string
+    if not url:
+        return jsonify({
+            "verdict": "error",
+            "is_phishing": False,
+            "confidence": 0.0,
+            "detection_layer": "none",
+            "explanation": "Empty URL received.",
+            "ml_score": None,
+            "domain": "",
+            "error": "empty url",
+        }), 400
+
+    # Execute URL inspection cascade
+    result = hybrid_checker.check_url(url)
+
+    # Calculate execution duration and attach metadata
+    elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+    result["response_time_ms"] = elapsed_ms
+
+    return jsonify(result), 200
+
+
