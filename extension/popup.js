@@ -66,3 +66,54 @@ function renderPhishing(app, verdict) {
     </div>
   `;
 }
+
+async function render() {
+  const app = document.getElementById("app");
+
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!activeTab) {
+    renderLoading(app);
+    return;
+  }
+
+  const storageKey = String(activeTab.id);
+  const stored = await chrome.storage.local.get(storageKey);
+  let entry = stored[storageKey];
+
+  if (!entry && activeTab.url && /^https?:\/\//i.test(activeTab.url)) {
+    app.className = "panel panel-loading";
+    app.innerHTML = `
+      <div class="title">Phishing Guard</div>
+      <div class="status-text">Checking this page…</div>
+    `;
+    entry = await chrome.runtime.sendMessage({
+      type: "CHECK_NOW",
+      tabId: activeTab.id,
+      url: activeTab.url,
+    });
+  }
+
+  if (!entry) {
+    renderLoading(app);
+    return;
+  }
+
+  if (entry.flaskOffline) {
+    renderOffline(app, entry);
+    return;
+  }
+
+  const verdict = entry.verdict;
+  if (!verdict) {
+    renderLoading(app);
+    return;
+  }
+
+  if (verdict.is_phishing) {
+    renderPhishing(app, verdict);
+  } else {
+    renderSafe(app, verdict, entry.checkedUrl);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", render);
