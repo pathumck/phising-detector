@@ -151,3 +151,41 @@ function renderBlockedDetails(verdict) {
   content.appendChild(goBackBtn);
   content.appendChild(continueBtn);
 }
+
+async function runCheck(url) {
+  card.className = "card";
+  buildStepperMarkup(url);
+
+  const responsePromise = chrome.runtime.sendMessage({
+    type: "CHECK_FROM_INTERSTITIAL",
+    url,
+  });
+
+  const [response] = await Promise.all([responsePromise, sleep(prefersReducedMotion ? 0 : 150)]);
+
+  if (!response || response.flaskOffline) {
+    renderOffline(url);
+    return;
+  }
+
+  const verdict = response.verdict;
+  const matchIndex = stageIndexForLayer(verdict.detection_layer);
+
+  await runStepperSweep(matchIndex, verdict.is_phishing);
+
+  if (verdict.is_phishing) {
+    await sleep(prefersReducedMotion ? 0 : 300);
+    renderBlockedDetails(verdict);
+  } else {
+    setStatus("Cleared — loading page…");
+    await sleep(prefersReducedMotion ? 0 : 220);
+    await chrome.runtime.sendMessage({ type: "MARK_APPROVED", url: targetUrl });
+    window.location.replace(targetUrl);
+  }
+}
+
+if (!targetUrl) {
+  content.innerHTML = `<div class="status-line">No target URL provided.</div>`;
+} else {
+  runCheck(targetUrl);
+}
