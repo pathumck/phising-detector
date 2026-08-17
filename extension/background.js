@@ -22,3 +22,9 @@ async function fetchWithTimeout(url, options, timeoutMs) {
     clearTimeout(timer);
   }
 }
+
+
+//Check whether a URL can be inspected by the extension.
+function isCheckableUrl(url) {
+  return typeof url === "string" && /^https?:\/\//i.test(url);
+}
