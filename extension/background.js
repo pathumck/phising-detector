@@ -76,3 +76,22 @@ async function runBackendCheck(tabId, url) {
 }
 
 
+//Intercepts top-level navigations before loading.
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  if (details.frameId !== 0) return;
+  if (!isCheckableUrl(details.url)) return;
+
+  // Consume one-shot approval if present
+  if (pendingApprovals.get(details.tabId) === details.url) {
+    pendingApprovals.delete(details.tabId);
+    return;
+  }
+
+  // Skip interstitial page navigations
+  if (details.url.startsWith(chrome.runtime.getURL(""))) return;
+
+  const interstitialUrl =
+    INTERSTITIAL_URL + "?target=" + encodeURIComponent(details.url);
+
+  chrome.tabs.update(details.tabId, { url: interstitialUrl });
+});
