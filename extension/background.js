@@ -95,3 +95,38 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 
   chrome.tabs.update(details.tabId, { url: interstitialUrl });
 });
+
+
+//Handles messages from interstitial.js and popup.js.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && message.type === "CHECK_FROM_INTERSTITIAL" && message.url) {
+    const tabId = sender.tab && sender.tab.id;
+    if (tabId == null) {
+      sendResponse(null);
+      return false;
+    }
+    runBackendCheck(tabId, message.url).then(sendResponse);
+    return true;
+  }
+
+  if (message && message.type === "MARK_APPROVED" && message.url) {
+    const tabId = sender.tab && sender.tab.id;
+    if (tabId != null) {
+      pendingApprovals.set(tabId, message.url);
+    }
+    sendResponse(true);
+    return false;
+  }
+
+  if (message && message.type === "CHECK_NOW" && message.tabId && message.url) {
+    runBackendCheck(message.tabId, message.url).then(sendResponse);
+    return true;
+  }
+
+  if (message && message.type === "GET_CURRENT_VERDICT" && sender.tab && sender.tab.id != null) {
+    chrome.storage.local.get(String(sender.tab.id)).then((stored) => {
+      sendResponse(stored[String(sender.tab.id)] || null);
+    });
+    return true;
+  }
+});
