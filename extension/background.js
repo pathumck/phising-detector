@@ -130,3 +130,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+
+// Clean up storage and pending approvals when a tab closes
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.local.remove(String(tabId));
+  pendingApprovals.delete(tabId);
+});
