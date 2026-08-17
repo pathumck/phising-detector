@@ -1,17 +1,20 @@
-
 """
 Layer 3 of the hybrid detection system.
 
 Three methods in strict execution order (stops at first match):
 
-Method C — Homograph Attack (FIRST)
-Unicode/Cyrillic characters visually identical to Latin.
-Fires only when the brand contains non-ASCII characters.
+Method C - Homograph Attack (FIRST)
+Unicode/Cyrillic characters visually identical to Latin. Also decodes
+punycode (xn--...) labels before checking, since real-world IDN
+homograph attacks travel over the wire as punycode ASCII, not literal
+Unicode - a browser decodes punycode for display, but the raw URL
+string this function receives is punycode until decoded here.
+Fires only when the (decoded) brand contains non-ASCII characters.
 
-Method A — TLD Swap + Subdomain Impersonation (SECOND)
+Method A - TLD Swap + Subdomain Impersonation (SECOND)
 Exact brand under a different TLD or brand placed as a subdomain.
 
-Method B — Levenshtein Typosquatting (THIRD)
+Method B - Levenshtein Typosquatting (THIRD)
 One or two keystrokes from a trusted brand name.
 """
 
@@ -77,6 +80,29 @@ def _clean_hostname(url: str) -> str | None:
         return None
 
 
+def _decode_punycode_label(label: str) -> str:
+    """
+    Decode a single punycode label (xn--...) to its Unicode form.
+
+    Browsers decode punycode automatically for display, but URLs
+    arriving over HTTP (from the extension, from curl, from any raw
+    client) are transmitted as punycode ASCII. Without this step, a
+    homograph attack like paypal.com with Cyrillic 'a'- which is
+    sent over the wire as xn--pypal-4ve.com - would look like plain
+    ASCII to the homograph check and slip through to Layer 4 instead
+    of being caught here with high confidence.
+
+    Returns the original label unchanged if it isn't punycode, or if
+    decoding fails for any reason - never raises.
+    """
+    if not label.lower().startswith("xn--"):
+        return label
+    try:
+        return label[4:].encode("ascii").decode("punycode")
+    except Exception:
+        return label
+
+
 def _normalise_homograph(name: str) -> str:
     """Expose hidden Unicode character substitutions in a domain name."""
     decomposed = unicodedata.normalize("NFKD", name)
@@ -129,13 +155,21 @@ def _levenshtein(s1: str, s2: str, max_dist: int = 2) -> int:
 
 
 def _check_homograph(hostname: str, brand: str) -> dict | None:
-    """Method C — Detect Unicode homograph / Cyrillic substitution attacks."""
-    if brand.isascii():
+    """
+    Method C - Detect Unicode homograph / Cyrillic substitution attacks.
+
+    Decodes punycode first (see _decode_punycode_label), then checks
+    whether the decoded brand contains non-ASCII characters that
+    visually collapse to a trusted brand name.
+    """
+    decoded_brand = _decode_punycode_label(brand)
+
+    if decoded_brand.isascii():
         return None
 
-    normalised = _normalise_homograph(brand)
+    normalised = _normalise_homograph(decoded_brand)
 
-    if brand == normalised:
+    if decoded_brand == normalised:
         return None
 
     if normalised in _whitelist.WHITELIST_NAMES:
@@ -146,7 +180,7 @@ def _check_homograph(hostname: str, brand: str) -> dict | None:
             "detection_layer": "lookalike_homograph",
             "explanation": (
                 f"'{hostname}' uses Unicode character substitution "
-                f"to visually impersonate '{normalised}'."
+                f"(punycode-encoded) to visually impersonate '{normalised}'."
             ),
             "domain": hostname,
         }
@@ -154,7 +188,7 @@ def _check_homograph(hostname: str, brand: str) -> dict | None:
 
 
 def _check_tld_swap(hostname: str, brand: str) -> dict | None:
-    """Method A — Detect TLD swap and subdomain impersonation."""
+    """Method A - Detect TLD swap and subdomain impersonation."""
     if brand in _whitelist.WHITELIST_NAMES:
         return {
             "verdict": "phishing",
@@ -200,7 +234,7 @@ def _check_tld_swap(hostname: str, brand: str) -> dict | None:
 
 
 def _check_typosquatting(hostname: str, brand: str) -> dict | None:
-    """Method B — Detect Levenshtein distance typosquatting."""
+    """Method B - Detect Levenshtein distance typosquatting."""
     compare_brand = _normalise_digits(brand)
     digit_substituted = (compare_brand != brand)
 
