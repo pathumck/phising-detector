@@ -10,3 +10,15 @@ const INTERSTITIAL_URL = chrome.runtime.getURL("interstitial.html");
 // tabId -> URL allowed through without interception.
 // One-shot bypass for cleared destinations.
 const pendingApprovals = new Map();
+
+
+//Execute a fetch request with a timeout.
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
