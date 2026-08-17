@@ -88,6 +88,24 @@ async function runStepperSweep(matchIndex, isPhishing) {
   markStep(matchIndex, isPhishing ? "match-danger" : "match-safe");
 }
 
+function renderOffline(url) {
+  card.className = "card";
+  content.innerHTML = `
+    <div class="domain">${url}</div>
+    <div class="status-line" style="margin-bottom:14px;">Detection server unreachable.</div>
+    <div class="details">
+      <div><span>Could not reach the Phishing Guard backend at localhost:5000.
+      Make sure Flask (app.py) is running, then retry.</span></div>
+    </div>
+  `;
+  const retryBtn = document.createElement("button");
+  retryBtn.id = "goBackBtn";
+  retryBtn.textContent = "Retry";
+  retryBtn.style.backgroundColor = "var(--accent)";
+  retryBtn.addEventListener("click", () => runCheck(url));
+  content.appendChild(retryBtn);
+}
+
 function renderBlockedDetails(verdict) {
   card.className = "card blocked";
 
