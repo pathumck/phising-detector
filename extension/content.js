@@ -91,7 +91,7 @@ function removeOverlay() {
   document.documentElement.style.overflow = "";
 }
 
-// Builds and injects the block overlay.
+//Builds and injects the block overlay.
 function showBlockOverlay(verdict) {
   if (document.getElementById(OVERLAY_ID)) {
     return;
@@ -234,3 +234,14 @@ function showBlockOverlay(verdict) {
 
   document.documentElement.appendChild(overlay);
 }
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message && message.type === "PHISHING_VERDICT") {
+    const verdict = message.verdict;
+    if (verdict && verdict.is_phishing) {
+      showBlockOverlay(verdict);
+    } else if (verdict) {
+      showSafeToast(verdict);
+    }
+  }
+});
