@@ -245,3 +245,17 @@ chrome.runtime.onMessage.addListener((message) => {
     }
   }
 });
+
+chrome.runtime
+  .sendMessage({ type: "GET_CURRENT_VERDICT" })
+  .then((entry) => {
+    if (!entry || entry.flaskOffline || !entry.verdict) {
+      return;
+    }
+    if (entry.verdict.is_phishing) {
+      showBlockOverlay(entry.verdict);
+    } else {
+      showSafeToast(entry.verdict);
+    }
+  })
+  .catch(() => {});
