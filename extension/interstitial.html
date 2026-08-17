@@ -73,6 +73,71 @@
     line-height: 1.4;
   }
 
+  /* ---- Cascade stepper: the signature element ---- */
+  .stepper {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .step {
+    flex: 1;
+    height: 4px;
+    border-radius: 3px;
+    background-color: #24304A;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .step-fill {
+    position: absolute;
+    inset: 0;
+    width: 0%;
+    background-color: var(--accent);
+    transition: width 0.3s ease, background-color 0.3s ease;
+  }
+
+  .step.cleared .step-fill {
+    width: 100%;
+    background-color: #2D3B58;
+  }
+
+  .step.active .step-fill {
+    width: 100%;
+    background-color: var(--accent);
+  }
+
+  .step.match-safe .step-fill {
+    width: 100%;
+    background-color: var(--success);
+  }
+
+  .step.match-danger .step-fill {
+    width: 100%;
+    background-color: var(--danger);
+  }
+
+  .step-labels {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+
+  .step-labels span {
+    flex: 1;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #4B5A78;
+    text-align: center;
+    transition: color 0.25s ease;
+  }
+
+  .step-labels span.done { color: var(--muted); }
+  .step-labels span.current { color: var(--text); font-weight: 600; }
+  .step-labels span.safe-label { color: var(--success); font-weight: 600; }
+  .step-labels span.danger-label { color: var(--danger); font-weight: 600; }
+
   .status-line {
     font-size: 13px;
     color: var(--muted);
@@ -133,7 +198,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .card { transition: none; }
+    .step-fill, .card { transition: none; }
   }
 </style>
 </head>
