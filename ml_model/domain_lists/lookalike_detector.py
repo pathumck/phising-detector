@@ -1,21 +1,11 @@
 """
-Layer 3 of the hybrid detection system.
+Layer 3 of the hybrid detection system - Lookalike & Homograph Detection.
 
-Three methods in strict execution order (stops at first match):
-
-Method C - Homograph Attack (FIRST)
-Unicode/Cyrillic characters visually identical to Latin. Also decodes
-punycode (xn--...) labels before checking, since real-world IDN
-homograph attacks travel over the wire as punycode ASCII, not literal
-Unicode - a browser decodes punycode for display, but the raw URL
-string this function receives is punycode until decoded here.
-Fires only when the (decoded) brand contains non-ASCII characters.
-
-Method A - TLD Swap + Subdomain Impersonation (SECOND)
-Exact brand under a different TLD or brand placed as a subdomain.
-
-Method B - Levenshtein Typosquatting (THIRD)
-One or two keystrokes from a trusted brand name.
+Execution Order (Stops at first match):
+1. Method C: Homograph Attack (Punycode / Unicode visual spoofing)
+2. Method A: TLD Swap & Subdomain Impersonation
+3. Method D: Fake ccTLD / Multi-Part-TLD Impersonation
+4. Method B: Levenshtein Typosquatting & L33tspeak Substitutions
 """
 
 import unicodedata
@@ -25,41 +15,63 @@ import domain_lists.whitelist as _whitelist
 
 # Cyrillic characters visually identical to Latin
 CYRILLIC_TO_LATIN = {
-    "а": "a",
-    "е": "e",
-    "о": "o",
-    "р": "p",
-    "с": "c",
-    "х": "x",
-    "і": "i",
-    "ј": "j",
-    "ѕ": "s",
-    "ԁ": "d",
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c",
+    "х": "x", "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d",
 }
 
 # Digit substitutions used by Method B for typosquatting
 DIGIT_TO_LETTER = {
-    "0": "o",
-    "1": "l",
-    "3": "e",
-    "4": "a",
-    "5": "s",
-    "6": "g",
-    "7": "t",
-    "8": "b",
+    "0": "o", "1": "l", "3": "e", "4": "a",
+    "5": "s", "6": "g", "7": "t", "8": "b",
+}
+
+_EXTRA_CCTLDS = {
+    "au", "uk", "lk", "nz", "us", "ca", "in", "za",
+    "sg", "ie", "de", "fr", "jp", "cn", "br", "ru",
+    "kr", "my", "ph", "pk", "bd", "np", "ae",
+}
+
+_GENERIC_TLDS = {"com", "net", "org", "info", "biz", "co"}
+
+_SENSITIVE_KEYWORDS = {
+    "finance", "financial", "bank", "banking", "gov", "government",
+    "tax", "treasury", "customs", "ministry", "embassy", "passport",
+    "visa", "immigration", "trade", "export", "import", "revenue",
+    "authority", "agency", "department", "national", "federal",
+    "secure", "verify", "account", "login", "portal", "payment",
+}
+
+_GENERIC_SUBDOMAINS = {
+    "www", "mail", "email", "ftp", "cdn", "api",
+    "app", "web", "blog", "m", "en", "static",
+    "media", "images", "shop", "edu", "gov",
+    "support", "help", "news", "portal", "admin",
 }
 
 
+def _known_cctlds_priority() -> list[str]:
+    """Ordered list of known country codes for Method D to ensure deterministic execution."""
+    priority = {tld.split(".")[-1] for tld in _whitelist.MULTI_PART_TLDS}
+    rest = _EXTRA_CCTLDS - priority
+    return sorted(priority) + sorted(rest)
+
+
+def _contains_sensitive_keyword(hostname: str) -> bool:
+    """True if any label in the hostname contains an institutional/finance/gov keyword."""
+    hostname = hostname.lower()
+    return any(kw in hostname for kw in _SENSITIVE_KEYWORDS)
+
+
 def _extract_brand(hostname: str) -> str:
-    """Extract brand name from a full hostname by removing subdomains and TLD."""
-    hostname = hostname.lower().strip()
+    """Extract brand name from a full hostname by stripping subdomains and TLD."""
+    hostname = hostname.lower().strip().rstrip(".")
     parts = hostname.split(".")
 
     if len(parts) < 2:
         return hostname
 
-    if len(parts) >= 3 and \
-            ".".join(parts[-2:]) in _whitelist.MULTI_PART_TLDS:
+    candidate_suffix = ".".join(parts[-2:])
+    if len(parts) >= 3 and candidate_suffix in _whitelist.MULTI_PART_TLDS:
         return parts[-3]
 
     return parts[-2]
@@ -72,29 +84,14 @@ def _clean_hostname(url: str) -> str | None:
             url = "http://" + url
 
         parsed = urlparse(url)
-        hostname = (parsed.hostname or "").lower()
-
+        hostname = (parsed.hostname or "").lower().strip().rstrip(".")
         return hostname if hostname else None
-
     except Exception:
         return None
 
 
 def _decode_punycode_label(label: str) -> str:
-    """
-    Decode a single punycode label (xn--...) to its Unicode form.
-
-    Browsers decode punycode automatically for display, but URLs
-    arriving over HTTP (from the extension, from curl, from any raw
-    client) are transmitted as punycode ASCII. Without this step, a
-    homograph attack like paypal.com with Cyrillic 'a'- which is
-    sent over the wire as xn--pypal-4ve.com - would look like plain
-    ASCII to the homograph check and slip through to Layer 4 instead
-    of being caught here with high confidence.
-
-    Returns the original label unchanged if it isn't punycode, or if
-    decoding fails for any reason - never raises.
-    """
+    """Decode a single punycode label (xn--...) to Unicode."""
     if not label.lower().startswith("xn--"):
         return label
     try:
@@ -106,18 +103,13 @@ def _decode_punycode_label(label: str) -> str:
 def _normalise_homograph(name: str) -> str:
     """Expose hidden Unicode character substitutions in a domain name."""
     decomposed = unicodedata.normalize("NFKD", name)
-    stripped = "".join(
-        c for c in decomposed
-        if not unicodedata.combining(c)
-    )
-    latin = "".join(
-        CYRILLIC_TO_LATIN.get(c, c) for c in stripped
-    )
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    latin = "".join(CYRILLIC_TO_LATIN.get(c, c) for c in stripped)
     return latin.lower()
 
 
 def _normalise_digits(name: str) -> str:
-    """Map digit to letter substitutions for typosquatting checks."""
+    """Map digit-to-letter substitutions for typosquatting checks."""
     return "".join(DIGIT_TO_LETTER.get(c, c) for c in name.lower())
 
 
@@ -137,11 +129,7 @@ def _levenshtein(s1: str, s2: str, max_dist: int = 2) -> int:
             if s1[i - 1] == s2[j - 1]:
                 curr[j] = prev[j - 1]
             else:
-                curr[j] = 1 + min(
-                    prev[j],
-                    curr[j - 1],
-                    prev[j - 1],
-                )
+                curr[j] = 1 + min(prev[j], curr[j - 1], prev[j - 1])
 
             if curr[j] < row_min:
                 row_min = curr[j]
@@ -154,87 +142,140 @@ def _levenshtein(s1: str, s2: str, max_dist: int = 2) -> int:
     return prev[n]
 
 
-def _check_homograph(hostname: str, brand: str) -> dict | None:
-    """
-    Method C - Detect Unicode homograph / Cyrillic substitution attacks.
+def _max_allowed_distance(name_len: int) -> int:
+    """Short strings (<=5 chars) only allow edit distance 1 to prevent false positives."""
+    if name_len <= 5:
+        return 1
+    return 2
 
-    Decodes punycode first (see _decode_punycode_label), then checks
-    whether the decoded brand contains non-ASCII characters that
-    visually collapse to a trusted brand name.
-    """
-    decoded_brand = _decode_punycode_label(brand)
 
-    if decoded_brand.isascii():
-        return None
+def _check_homograph(hostname: str) -> dict | None:
+    """Method C - Detect Unicode homograph / Cyrillic substitution attacks across all labels."""
+    labels = hostname.split(".")
 
-    normalised = _normalise_homograph(decoded_brand)
+    for raw_label in labels:
+        decoded_label = _decode_punycode_label(raw_label)
+        if decoded_label.isascii():
+            continue
 
-    if decoded_brand == normalised:
-        return None
+        normalised = _normalise_homograph(decoded_label)
+        if decoded_label == normalised:
+            continue
 
-    if normalised in _whitelist.WHITELIST_NAMES:
-        return {
-            "verdict": "phishing",
-            "is_phishing": True,
-            "confidence": 0.95,
-            "detection_layer": "lookalike_homograph",
-            "explanation": (
-                f"'{hostname}' uses Unicode character substitution "
-                f"(punycode-encoded) to visually impersonate '{normalised}'."
-            ),
-            "domain": hostname,
-        }
+        if normalised in _whitelist.WHITELIST_NAMES:
+            return {
+                "verdict": "phishing",
+                "is_phishing": True,
+                "confidence": 0.95,
+                "detection_layer": "lookalike_homograph",
+                "explanation": (
+                    f"'{hostname}' uses Unicode character substitution "
+                    f"to visually impersonate trusted brand '{normalised}'."
+                ),
+                "domain": hostname,
+            }
     return None
 
 
 def _check_tld_swap(hostname: str, brand: str) -> dict | None:
     """Method A - Detect TLD swap and subdomain impersonation."""
-    if brand in _whitelist.WHITELIST_NAMES:
+    parts = hostname.split(".")
+    
+    # Calculate registrable domain to prevent flagging whitelisted parent domains
+    registrable = ".".join(parts[-3:]) if ".".join(parts[-2:]) in _whitelist.MULTI_PART_TLDS else ".".join(parts[-2:])
+
+    # Exact brand under a non-whitelisted TLD
+    if brand in _whitelist.WHITELIST_NAMES and registrable not in _whitelist.WHITELIST:
         return {
             "verdict": "phishing",
             "is_phishing": True,
             "confidence": 0.92,
             "detection_layer": "lookalike_exact_lookalike",
             "explanation": (
-                f"'{hostname}' uses the exact brand name "
-                f"'{brand}' of a trusted domain under a different TLD."
+                f"'{hostname}' uses the exact brand name '{brand}' "
+                f"of a trusted domain under an unverified TLD."
             ),
             "domain": hostname,
         }
 
-    _GENERIC_SUBDOMAINS = {
-        "www", "mail", "email", "ftp", "cdn", "api",
-        "app", "web", "blog", "m", "en", "static",
-        "media", "images", "shop", "edu", "gov",
-        "support", "help", "news", "portal", "admin",
-    }
-
-    parts = hostname.split(".")
-    subdomains = parts[:-2]
-
-    for sub in subdomains:
-        if sub in _GENERIC_SUBDOMAINS:
-            continue
-        if sub in _whitelist.WHITELIST_NAMES:
-            actual_domain = ".".join(parts[-2:])
-            return {
-                "verdict": "phishing",
-                "is_phishing": True,
-                "confidence": 0.92,
-                "detection_layer": "lookalike_exact_lookalike",
-                "explanation": (
-                    f"'{hostname}' places the trusted brand name "
-                    f"'{sub}' as a subdomain of the unrelated "
-                    f"domain '{actual_domain}'."
-                ),
-                "domain": hostname,
-            }
+    # Subdomain impersonation check
+    if len(parts) > 2 and registrable not in _whitelist.WHITELIST:
+        subdomains = parts[:-2] if ".".join(parts[-2:]) not in _whitelist.MULTI_PART_TLDS else parts[:-3]
+        for sub in subdomains:
+            if sub in _GENERIC_SUBDOMAINS:
+                continue
+            if sub in _whitelist.WHITELIST_NAMES:
+                return {
+                    "verdict": "phishing",
+                    "is_phishing": True,
+                    "confidence": 0.92,
+                    "detection_layer": "lookalike_exact_lookalike",
+                    "explanation": (
+                        f"'{hostname}' places trusted brand '{sub}' "
+                        f"as a subdomain of untrusted domain '{registrable}'."
+                    ),
+                    "domain": hostname,
+                }
 
     return None
 
 
+def _check_cctld_impersonation(hostname: str) -> dict | None:
+    """Method D - Detect fake-ccTLD impersonation of government/multi-part domains."""
+    parts = hostname.split(".")
+    if len(parts) < 3:
+        return None
+
+    tld = parts[-1]
+    sld = parts[-2]
+
+    if tld not in _GENERIC_TLDS or ".".join(parts[-2:]) in _whitelist.MULTI_PART_TLDS:
+        return None
+
+    if len(sld) not in (2, 3):
+        return None
+
+    known = _known_cctlds_priority()
+    matched_cc = None
+    dist = 999
+
+    if sld in known:
+        dist = 0
+        matched_cc = sld
+    else:
+        for cc in known:
+            d = _levenshtein(sld, cc, max_dist=1)
+            if d < dist:
+                dist = d
+                matched_cc = cc
+                if dist == 0:
+                    break
+
+    if dist > 1 or matched_cc is None:
+        return None
+
+    prefix = ".".join(parts[:-2])
+    if not _contains_sensitive_keyword(prefix):
+        return None
+
+    confidence = 0.92 if dist == 0 else 0.90
+
+    return {
+        "verdict": "phishing",
+        "is_phishing": True,
+        "confidence": confidence,
+        "detection_layer": "lookalike_cctld_impersonation",
+        "explanation": (
+            f"'{hostname}' places an institutional keyword in front of '{sld}.{tld}', "
+            f"where '{sld}' mimics the country code '.{matched_cc}' "
+            f"commonly used in government TLDs (e.g., '.gov.{matched_cc}')."
+        ),
+        "domain": hostname,
+    }
+
+
 def _check_typosquatting(hostname: str, brand: str) -> dict | None:
-    """Method B - Detect Levenshtein distance typosquatting."""
+    """Method B - Detect Levenshtein distance typosquatting and l33tspeak."""
     compare_brand = _normalise_digits(brand)
     digit_substituted = (compare_brand != brand)
 
@@ -248,9 +289,17 @@ def _check_typosquatting(hostname: str, brand: str) -> dict | None:
             best_dist = dist
             best_match = trusted
 
-        if best_dist <= 1:
+        if best_dist == 0:
             break
 
+    if best_match is None:
+        return None
+
+    allowed = _max_allowed_distance(min(len(compare_brand), len(best_match)))
+    if best_dist > allowed:
+        return None
+
+    # Handle digit substitutions (e.g., p4ypal -> paypal)
     if best_dist == 0 and digit_substituted:
         return {
             "verdict": "phishing",
@@ -271,8 +320,7 @@ def _check_typosquatting(hostname: str, brand: str) -> dict | None:
             "confidence": 0.92,
             "detection_layer": "lookalike_typosquatting",
             "explanation": (
-                f"'{hostname}' is one edit away from "
-                f"trusted domain '{best_match}'."
+                f"'{hostname}' is one edit away from trusted brand '{best_match}'."
             ),
             "domain": hostname,
         }
@@ -284,8 +332,7 @@ def _check_typosquatting(hostname: str, brand: str) -> dict | None:
             "confidence": 0.75,
             "detection_layer": "lookalike_typosquatting",
             "explanation": (
-                f"'{hostname}' is two edits away from "
-                f"trusted domain '{best_match}'."
+                f"'{hostname}' is two edits away from trusted brand '{best_match}'."
             ),
             "domain": hostname,
         }
@@ -294,7 +341,7 @@ def _check_typosquatting(hostname: str, brand: str) -> dict | None:
 
 
 def check_lookalike(url: str) -> dict | None:
-    """Run all three lookalike methods in order C -> A -> B."""
+    """Run lookalike detection methods in strict sequence: C -> A -> D -> B."""
     try:
         hostname = _clean_hostname(url)
         if not hostname:
@@ -304,11 +351,15 @@ def check_lookalike(url: str) -> dict | None:
         if not brand:
             return None
 
-        result = _check_homograph(hostname, brand)
+        result = _check_homograph(hostname)
         if result:
             return result
 
         result = _check_tld_swap(hostname, brand)
+        if result:
+            return result
+
+        result = _check_cctld_impersonation(hostname)
         if result:
             return result
 
