@@ -11,7 +11,8 @@ from feature_extractor import extract_features, FEATURE_NAMES
 
 # Load the cleaned dataset produced by preprocess.py
 print("Loading clean_urls.csv ...")
-df = pd.read_csv("dataset/clean_urls.csv")
+# df = pd.read_csv("dataset/clean_urls.csv")
+df = pd.read_csv("dataset/clean_urls_augmented.csv")
 print(f"Loaded {len(df):,} URLs")
 print(f"Label distribution:")
 print(f"  0 = Legitimate: {(df['Label']==0).sum():,}")
