@@ -25,7 +25,7 @@ function formatConfidence(confidence) {
   return `${pct}%`;
 }
 
-//Displays an auto-dismissing corner notification for safe verdicts.
+// Displays an auto-dismissing corner notification for safe verdicts.
 function showSafeToast(verdict) {
   const existing = document.getElementById(TOAST_ID);
   if (existing) {
@@ -82,7 +82,7 @@ function showSafeToast(verdict) {
   }, TOAST_DURATION_MS);
 }
 
-//Removes the overlay and restores page scrolling.
+// Removes the overlay and restores page scrolling.
 function removeOverlay() {
   const existing = document.getElementById(OVERLAY_ID);
   if (existing) {
@@ -91,7 +91,7 @@ function removeOverlay() {
   document.documentElement.style.overflow = "";
 }
 
-//Builds and injects the block overlay.
+// Builds and injects the block overlay.
 function showBlockOverlay(verdict) {
   if (document.getElementById(OVERLAY_ID)) {
     return;
@@ -221,6 +221,12 @@ function showBlockOverlay(verdict) {
         "credential theft or malware. Are you sure you want to proceed?"
     );
     if (confirmed) {
+      chrome.runtime
+        .sendMessage({
+          type: "RECORD_OVERRIDE",
+          url: window.location.href,
+        })
+        .catch(() => {});
       removeOverlay();
     }
   });

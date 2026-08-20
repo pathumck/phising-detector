@@ -74,7 +74,7 @@ function markStep(i, state) {
   else if (state === "match-danger") label.className = "danger-label";
 }
 
-//Visualizes the cascade execution across detection stages.
+// Visualizes the cascade execution across detection stages.
 async function runStepperSweep(matchIndex, isPhishing) {
   for (let i = 0; i < matchIndex; i++) {
     setStatus(`Checking ${STAGES[i].toLowerCase()}…`);
@@ -141,6 +141,7 @@ function renderBlockedDetails(verdict) {
         "credential theft or malware. Are you sure you want to proceed?"
     );
     if (confirmed) {
+      await chrome.runtime.sendMessage({ type: "RECORD_OVERRIDE", url: targetUrl });
       await chrome.runtime.sendMessage({ type: "MARK_APPROVED", url: targetUrl });
       window.location.replace(targetUrl);
     }

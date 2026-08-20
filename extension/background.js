@@ -4,6 +4,8 @@
  */
 
 const API_URL = "http://localhost:5000/predict";
+const OVERRIDE_URL = "http://localhost:5000/override";
+const OVERRIDE_CHECK_URL = "http://localhost:5000/override/check";
 const FETCH_TIMEOUT_MS = 4000;
 const INTERSTITIAL_URL = chrome.runtime.getURL("interstitial.html");
 
@@ -12,7 +14,7 @@ const INTERSTITIAL_URL = chrome.runtime.getURL("interstitial.html");
 const pendingApprovals = new Map();
 
 
-//Execute a fetch request with a timeout.
+// Execute a fetch request with a timeout.
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -24,7 +26,7 @@ async function fetchWithTimeout(url, options, timeoutMs) {
 }
 
 
-//Check whether a URL can be inspected by the extension.
+// Check whether a URL can be inspected by the extension.
 function isCheckableUrl(url) {
   return typeof url === "string" && /^https?:\/\//i.test(url);
 }
@@ -76,8 +78,52 @@ async function runBackendCheck(tabId, url) {
 }
 
 
-//Intercepts top-level navigations before loading.
-chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+/**
+ * Records that the user chose to proceed through a flagged warning.
+ * Best-effort — a logging failure must never block navigation.
+ */
+async function recordOverride(tabId, url) {
+  try {
+    await fetchWithTimeout(
+      OVERRIDE_URL,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, tab_id: String(tabId) }),
+      },
+      FETCH_TIMEOUT_MS
+    );
+  } catch (err) {
+    console.warn("[background] Could not record override:", err.message);
+  }
+}
+
+
+/**
+ * Checks whether this tab already overrode a warning for this URL
+ * recently, so we can skip re-showing the interstitial and nagging
+ * the user again this session.
+ */
+async function wasRecentlyOverridden(tabId, url) {
+  try {
+    const params = new URLSearchParams({ url, tab_id: String(tabId) });
+    const response = await fetchWithTimeout(
+      `${OVERRIDE_CHECK_URL}?${params.toString()}`,
+      { method: "GET" },
+      FETCH_TIMEOUT_MS
+    );
+    if (!response.ok) return false;
+    const data = await response.json();
+    return Boolean(data.already_overridden);
+  } catch (err) {
+    // Backend unreachable — fail safe by still showing the interstitial.
+    return false;
+  }
+}
+
+
+// Intercepts top-level navigations before loading.
+chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (details.frameId !== 0) return;
   if (!isCheckableUrl(details.url)) return;
 
@@ -90,6 +136,11 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   // Skip interstitial page navigations
   if (details.url.startsWith(chrome.runtime.getURL(""))) return;
 
+  // Skip re-warning if this tab already overrode this exact URL recently
+  if (await wasRecentlyOverridden(details.tabId, details.url)) {
+    return;
+  }
+
   const interstitialUrl =
     INTERSTITIAL_URL + "?target=" + encodeURIComponent(details.url);
 
@@ -97,7 +148,7 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 });
 
 
-//Handles messages from interstitial.js and popup.js.
+// Handles messages from interstitial.js, content.js and popup.js.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && message.type === "CHECK_FROM_INTERSTITIAL" && message.url) {
     const tabId = sender.tab && sender.tab.id;
@@ -116,6 +167,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     sendResponse(true);
     return false;
+  }
+
+  if (message && message.type === "RECORD_OVERRIDE" && message.url) {
+    const tabId = sender.tab && sender.tab.id;
+    if (tabId == null) {
+      sendResponse(false);
+      return false;
+    }
+    recordOverride(tabId, message.url).then(() => sendResponse(true));
+    return true;
   }
 
   if (message && message.type === "CHECK_NOW" && message.tabId && message.url) {
