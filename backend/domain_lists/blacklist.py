@@ -1,21 +1,28 @@
 """
 Layer 1 of the hybrid detection system.
-Sources loaded at startup into one unified Python set:
-  Source 1: PhishTank CSV (static file)
-  Source 2: blacklist.txt (runtime learning)
+Sources loaded at startup into one unified Python set, sourced
+from phishing_guard.db (blacklist_domains table).
+
+IMPORTANT - in-memory cache design:
+BLACKLIST is a Python set kept in memory for O(1) lookup speed on every
+/predict request (required for the sub-500ms latency target). The database
+is the source of truth, but it is only read from at startup by default.
+Any addition/removal MUST go through add_to_blacklist() or
+remove_from_blacklist() below, which update BOTH the in-memory set and the
+database together. Editing the database directly while the app is running
+will NOT be reflected until reload_blacklist() is called or the app restarts.
 """
 
 import re
 import os
-import csv
+import sqlite3
 from urllib.parse import urlparse
 
 # The unified blacklist - all sources merged here at startup
 BLACKLIST: set[str] = set()
 
-_HERE           = os.path.dirname(os.path.abspath(__file__))
-_PHISHTANK_PATH = os.path.join(_HERE, "phishtank.csv")
-_RUNTIME_PATH   = os.path.join(_HERE, "blacklist.txt")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(_HERE, "..", "phishing_guard.db")
 
 # Domain validation regex
 _DOMAIN_RE = re.compile(
@@ -31,27 +38,9 @@ _MULTI_PART_TLDS = {
 }
 
 
-# Shared platforms never blacklisted at domain level
-_SHARED_PLATFORMS = {
-    "google.com", "google.co.uk", "google.com.au",
-    "google.co.in", "google.de", "google.fr",
-    "linkedin.com", "facebook.com", "twitter.com", "x.com",
-    "instagram.com", "tiktok.com", "reddit.com", "pinterest.com",
-    "wixsite.com", "wix.com", "weebly.com",
-    "squarespace.com", "webflow.io", "carrd.co",
-    "github.io", "github.com", "gitlab.io",
-    "replit.app", "replit.com", "glitch.me",
-    "netlify.app", "vercel.app", "pages.dev",
-    "web.app", "firebaseapp.com",
-    "flowcode.com", "linktr.ee", "bio.link",
-    "beacons.ai", "campsite.bio",
-    "drive.google.com", "docs.google.com",
-    "sharepoint.com", "onedrive.live.com",
-    "dropbox.com", "box.com",
-    "blogspot.com", "wordpress.com",
-    "medium.com", "substack.com",
-    "notion.so", "sites.google.com",
-}
+def _get_conn() -> sqlite3.Connection:
+    """Open a connection to the shared SQLite database."""
+    return sqlite3.connect(DB_PATH)
 
 
 def _extract_registrable_domain(hostname: str) -> str:
@@ -95,89 +84,66 @@ def _is_valid_domain(domain: str) -> bool:
     return bool(domain and _DOMAIN_RE.match(domain))
 
 
-def _load_phishtank() -> int:
-    """Load verified active PhishTank CSV domains into BLACKLIST set."""
-    if not os.path.exists(_PHISHTANK_PATH):
-        print(f"[blacklist] WARNING: PhishTank CSV not found.")
-        print(f"            Expected: {_PHISHTANK_PATH}")
-        return 0
-
-    loaded  = 0
-    skipped = 0
-
-    with open(_PHISHTANK_PATH, "r", encoding="utf-8",
-              errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            verified = row.get("verified", "").strip().lower()
-            online   = row.get("online",   "").strip().lower()
-
-            if verified != "yes" or online != "yes":
-                skipped += 1
-                continue
-
-            url    = row.get("url", "").strip()
-            domain = _extract_domain(url)
-
-            if not domain or not _is_valid_domain(domain):
-                continue
-
-            if domain in _SHARED_PLATFORMS:
-                skipped += 1
-                continue
-
-            BLACKLIST.add(domain)
-            loaded += 1
-
-    print(f"[blacklist] PhishTank: {loaded:,} domains loaded  "
-          f"({skipped:,} unverified/offline skipped).")
-    return loaded
-
-
-def _load_runtime() -> int:
-    """Load runtime-learned domains from blacklist.txt."""
-    if not os.path.exists(_RUNTIME_PATH):
-        return 0
-
-    loaded = 0
-    with open(_RUNTIME_PATH, "r", encoding="utf-8") as f:
-        for line in f:
-            domain = line.strip().lower()
-            if domain and _is_valid_domain(domain):
-                BLACKLIST.add(domain)
-                loaded += 1
-
-    if loaded > 0:
-        print(f"[blacklist] Runtime learned: {loaded:,} domains "
-              f"from blacklist.txt")
-    return loaded
-
-
 def initialise_blacklist() -> None:
-    """Load all blacklist sources into the unified BLACKLIST set."""
-    print("[blacklist] Initialising...")
-    _load_phishtank()
-    _load_runtime()
-    print(f"[blacklist] Ready. "
-          f"Total unique domains: {len(BLACKLIST):,}")
-    
+    """Load all blacklist domains from the database into BLACKLIST."""
+    print("[blacklist] Initialising from database...")
+
+    if not os.path.exists(DB_PATH):
+        print(f"[blacklist] WARNING: Database not found at {DB_PATH}. "
+              f"Run migrate_to_sqlite.py first.")
+        return
+
+    conn = _get_conn()
+    try:
+        rows = conn.execute("SELECT domain FROM blacklist_domains").fetchall()
+        for (domain,) in rows:
+            if _is_valid_domain(domain):
+                BLACKLIST.add(domain)
+    finally:
+        conn.close()
+
+    print(f"[blacklist] Ready. Total unique domains: {len(BLACKLIST):,}")
+
+
+def reload_blacklist() -> int:
+    """
+    Force a full reload of BLACKLIST from the database.
+    Use this after deleting/editing rows directly in the database,
+    or on a timer/admin trigger, to bring the in-memory cache back
+    in sync with the source of truth without restarting the app.
+    """
+    BLACKLIST.clear()
+    initialise_blacklist()
+    return len(BLACKLIST)
+
 
 def clean_against_whitelist(whitelist: set) -> None:
-    """Remove whitelist overlaps from BLACKLIST set."""
+    """Remove whitelist overlaps from BLACKLIST set (in-memory + DB)."""
     global BLACKLIST
-    before   = len(BLACKLIST)
-    overlap  = BLACKLIST & whitelist
+    before = len(BLACKLIST)
+    overlap = BLACKLIST & whitelist
     BLACKLIST = BLACKLIST - whitelist
-    removed  = before - len(BLACKLIST)
+    removed = before - len(BLACKLIST)
+
     if removed > 0:
+        conn = _get_conn()
+        try:
+            conn.executemany(
+                "DELETE FROM blacklist_domains WHERE domain = ?",
+                [(d,) for d in overlap],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
         print(f"[blacklist] Removed {removed} domains also "
               f"in Tranco whitelist (shared platform cleanup): "
               f"{sorted(overlap)[:10]}"
               f"{'...' if len(overlap) > 10 else ''}")
-        
+
 
 def add_to_blacklist(domain: str) -> None:
-    """Add a newly detected phishing domain to memory and disk."""
+    """Add a newly detected phishing domain to memory and the database."""
     domain = domain.lower().strip()
 
     if not domain or not _is_valid_domain(domain):
@@ -188,13 +154,53 @@ def add_to_blacklist(domain: str) -> None:
 
     BLACKLIST.add(domain)
 
+    conn = _get_conn()
     try:
-        with open(_RUNTIME_PATH, "a", encoding="utf-8") as f:
-            f.write(domain + "\n")
-        print(f"[blacklist] Runtime learned + persisted: {domain}")
+        conn.execute(
+            "INSERT OR IGNORE INTO blacklist_domains (domain, source, confidence) "
+            "VALUES (?, ?, ?)",
+            (domain, "ml_auto_learned", 1.0),
+        )
+        conn.commit()
+        print(f"[blacklist] Runtime learned + persisted to DB: {domain}")
     except Exception as e:
-        print(f"[blacklist] WARNING: could not persist "
-              f"{domain}: {e}")
+        print(f"[blacklist] WARNING: could not persist {domain}: {e}")
+    finally:
+        conn.close()
+
+
+def remove_from_blacklist(domain: str) -> bool:
+    """
+    Remove a domain from both the in-memory BLACKLIST set and the
+    database in one operation, so the change takes effect immediately
+    on the running system without needing a restart.
+
+    Returns True if the domain was found and removed, False if it
+    wasn't in the blacklist to begin with.
+    """
+    domain = domain.lower().strip()
+
+    if not domain:
+        return False
+
+    was_present = domain in BLACKLIST
+    BLACKLIST.discard(domain)
+
+    conn = _get_conn()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM blacklist_domains WHERE domain = ?", (domain,)
+        )
+        conn.commit()
+        db_removed = cursor.rowcount > 0
+    finally:
+        conn.close()
+
+    if was_present or db_removed:
+        print(f"[blacklist] Removed from memory + DB: {domain}")
+        return True
+
+    return False
 
 
 def check_blacklist(url: str) -> dict | None:
@@ -206,11 +212,11 @@ def check_blacklist(url: str) -> dict | None:
 
     if domain in BLACKLIST:
         return {
-            "verdict":         "phishing",
-            "is_phishing":     True,
-            "confidence":      1.00,
+            "verdict": "phishing",
+            "is_phishing": True,
+            "confidence": 1.00,
             "detection_layer": "blacklist",
-            "explanation":     (
+            "explanation": (
                 f"{domain} is a confirmed phishing domain from "
                 f"PhishTank community threat intelligence. "
                 f"Verified and currently active."
