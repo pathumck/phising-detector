@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: phishing-guard-api
+    runtime: python
+    plan: starter                 
+    region: singapore             
+    branch: feature/load-balancer
+    rootDir: backend               
+    buildCommand: |
+      pip install -r requirements.txt
+      python migrate_to_sqlite.py   # only needed on first deploy / if db isn't committed
+    startCommand: gunicorn -w 4 -k gthread --threads 2 -b 0.0.0.0:$PORT app:app --timeout 60
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: phishing-guard-data
+      mountPath: /opt/render/project/src/backend/data   
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DB_PATH
+        value: /opt/render/project/src/backend/data/phishing_guard.db
+      - key: FLASK_ENV
+        value: production
+
+ 
