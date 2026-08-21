@@ -6,13 +6,22 @@ migrate_to_sqlite.py. Unlike blacklist.py / whitelist.py, there is no
 in-memory cache here - these tables are write-heavy audit/analytics
 data, not something looked up on the hot path of every /predict call,
 so every function goes straight to the database.
+
+NOTE ON DB_PATH:
+DB_PATH is resolved from the DB_PATH environment variable first, falling
+back to the local relative path for development. This lets a cloud
+platform (e.g. Render) point the app at a database file on a persistent
+disk without any code changes - only an env var needs to be set.
 """
 
 import os
 import sqlite3
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(_HERE, "phishing_guard.db")
+DB_PATH = os.environ.get(
+    "DB_PATH",
+    os.path.join(_HERE, "phishing_guard.db"),
+)
 
 # How recent an override has to be to suppress a re-warning on the same URL.
 # Keeps a user from being nagged again this browsing session, without
@@ -27,9 +36,11 @@ def _get_conn() -> sqlite3.Connection:
 
 # ---- verdict_log ----------------------------------------------------
 
-def log_verdict(url: str, result: dict, response_time_ms: float | None = None) -> None:
-    """
-    Persist a single check_url() result to verdict_log.
+
+def log_verdict(
+    url: str, result: dict, response_time_ms: float | None = None
+) -> None:
+    """Persist a single check_url() result to verdict_log.
 
     Best-effort: a logging failure must never break /predict, so
     errors are swallowed after being printed (same pattern as
@@ -48,8 +59,11 @@ def log_verdict(url: str, result: dict, response_time_ms: float | None = None) -
                 result.get("detection_layer", "none"),
                 result.get("confidence"),
                 result.get("ml_score"),
-                response_time_ms if response_time_ms is not None
-                else result.get("response_time_ms"),
+                (
+                    response_time_ms
+                    if response_time_ms is not None
+                    else result.get("response_time_ms")
+                ),
             ),
         )
         conn.commit()
@@ -60,26 +74,30 @@ def log_verdict(url: str, result: dict, response_time_ms: float | None = None) -
 
 
 def get_verdict_stats(limit_recent: int = 20) -> dict:
-    """
-    Summary stats for the admin/evaluation dashboard:
-      - total checks logged
-      - counts per detection_layer (how often each layer fires)
-      - counts per verdict (safe vs phishing)
-      - average response time in ms
-      - most recently logged checks
+    """Summary stats for the admin/evaluation dashboard:
+
+    - total checks logged
+    - counts per detection_layer (how often each layer fires)
+    - counts per verdict (safe vs phishing)
+    - average response time in ms
+    - most recently logged checks
     """
     conn = _get_conn()
     try:
         total = conn.execute("SELECT COUNT(*) FROM verdict_log").fetchone()[0]
 
-        by_layer = dict(conn.execute(
-            "SELECT detection_layer, COUNT(*) FROM verdict_log "
-            "GROUP BY detection_layer ORDER BY COUNT(*) DESC"
-        ).fetchall())
+        by_layer = dict(
+            conn.execute(
+                "SELECT detection_layer, COUNT(*) FROM verdict_log "
+                "GROUP BY detection_layer ORDER BY COUNT(*) DESC"
+            ).fetchall()
+        )
 
-        by_verdict = dict(conn.execute(
-            "SELECT verdict, COUNT(*) FROM verdict_log GROUP BY verdict"
-        ).fetchall())
+        by_verdict = dict(
+            conn.execute(
+                "SELECT verdict, COUNT(*) FROM verdict_log GROUP BY verdict"
+            ).fetchall()
+        )
 
         avg_response_ms = conn.execute(
             "SELECT AVG(response_time_ms) FROM verdict_log "
@@ -94,8 +112,12 @@ def get_verdict_stats(limit_recent: int = 20) -> dict:
 
         recent = [
             {
-                "url": r[0], "domain": r[1], "verdict": r[2],
-                "detection_layer": r[3], "confidence": r[4], "checked_at": r[5],
+                "url": r[0],
+                "domain": r[1],
+                "verdict": r[2],
+                "detection_layer": r[3],
+                "confidence": r[4],
+                "checked_at": r[5],
             }
             for r in recent_rows
         ]
@@ -104,7 +126,9 @@ def get_verdict_stats(limit_recent: int = 20) -> dict:
             "total_checks": total,
             "by_detection_layer": by_layer,
             "by_verdict": by_verdict,
-            "avg_response_time_ms": round(avg_response_ms, 2) if avg_response_ms else None,
+            "avg_response_time_ms": (
+                round(avg_response_ms, 2) if avg_response_ms else None
+            ),
             "recent": recent,
         }
     finally:
@@ -113,9 +137,10 @@ def get_verdict_stats(limit_recent: int = 20) -> dict:
 
 # ---- user_overrides ---------------------------------------------------
 
+
 def record_override(url: str, tab_id: str | None = None) -> int:
-    """
-    Record that a user dismissed a warning and proceeded to a flagged URL.
+    """Record that a user dismissed a warning and proceeded to a flagged URL.
+
     Returns the new row's id.
     """
     conn = _get_conn()
@@ -131,8 +156,8 @@ def record_override(url: str, tab_id: str | None = None) -> int:
 
 
 def check_override(url: str, tab_id: str | None = None) -> bool:
-    """
-    True if this URL was already overridden recently (within
+    """True if this URL was already overridden recently (within
+
     OVERRIDE_SUPPRESSION_HOURS), so the extension can skip re-warning
     the user on a page they already chose to proceed through.
 
@@ -159,13 +184,15 @@ def check_override(url: str, tab_id: str | None = None) -> bool:
         conn.close()
 
 
-def get_most_overridden_domains(min_count: int = 2, limit: int = 25) -> list[dict]:
-    """
-    Domains users have overridden more than once, joined against
-    verdict_log to show what each was flagged as. A domain that keeps
-    getting overridden and was flagged by a rule-based layer (not the
-    ML model) is a strong false-positive candidate worth reviewing -
-    useful evidence for the project's evaluation chapter.
+def get_most_overridden_domains(
+    min_count: int = 2, limit: int = 25
+) -> list[dict]:
+    """Domains users have overridden more than once, joined against verdict_log
+
+    to show what each was flagged as. A domain that keeps getting overridden
+    and was flagged by a rule-based layer (not the ML model) is a strong
+    false-positive candidate worth reviewing - useful evidence for the
+    project's evaluation chapter.
     """
     conn = _get_conn()
     try:

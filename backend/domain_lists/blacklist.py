@@ -11,10 +11,16 @@ Any addition/removal MUST go through add_to_blacklist() or
 remove_from_blacklist() below, which update BOTH the in-memory set and the
 database together. Editing the database directly while the app is running
 will NOT be reflected until reload_blacklist() is called or the app restarts.
+
+NOTE ON DB_PATH:
+DB_PATH is resolved from the DB_PATH environment variable first, falling
+back to the local relative path for development. This lets a cloud
+platform (e.g. Render) point the app at a database file on a persistent
+disk without any code changes - only an env var needs to be set.
 """
 
-import re
 import os
+import re
 import sqlite3
 from urllib.parse import urlparse
 
@@ -22,7 +28,10 @@ from urllib.parse import urlparse
 BLACKLIST: set[str] = set()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(_HERE, "..", "phishing_guard.db")
+DB_PATH = os.environ.get(
+    "DB_PATH",
+    os.path.join(_HERE, "..", "phishing_guard.db"),
+)
 
 # Domain validation regex
 _DOMAIN_RE = re.compile(
@@ -51,8 +60,7 @@ def _extract_registrable_domain(hostname: str) -> str:
 
     candidate = ".".join(parts[-2:])
     if candidate in _MULTI_PART_TLDS:
-        return ".".join(parts[-3:]) if len(parts) >= 3 \
-               else hostname.lower()
+        return ".".join(parts[-3:]) if len(parts) >= 3 else hostname.lower()
 
     return ".".join(parts[-2:])
 
@@ -89,8 +97,10 @@ def initialise_blacklist() -> None:
     print("[blacklist] Initialising from database...")
 
     if not os.path.exists(DB_PATH):
-        print(f"[blacklist] WARNING: Database not found at {DB_PATH}. "
-              f"Run migrate_to_sqlite.py first.")
+        print(
+            f"[blacklist] WARNING: Database not found at {DB_PATH}. "
+            f"Run migrate_to_sqlite.py first."
+        )
         return
 
     conn = _get_conn()
@@ -136,10 +146,12 @@ def clean_against_whitelist(whitelist: set) -> None:
         finally:
             conn.close()
 
-        print(f"[blacklist] Removed {removed} domains also "
-              f"in Tranco whitelist (shared platform cleanup): "
-              f"{sorted(overlap)[:10]}"
-              f"{'...' if len(overlap) > 10 else ''}")
+        print(
+            f"[blacklist] Removed {removed} domains also "
+            f"in Tranco whitelist (shared platform cleanup): "
+            f"{sorted(overlap)[:10]}"
+            f"{'...' if len(overlap) > 10 else ''}"
+        )
 
 
 def add_to_blacklist(domain: str) -> None:
