@@ -7,18 +7,19 @@ import os
 import sys
 import time
 
-from flask import Flask, jsonify, request
+
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from domain_lists.blacklist import (
-    BLACKLIST,
-    reload_blacklist,
-    remove_from_blacklist,
-)
-from domain_lists.whitelist import WHITELIST
 # Import local detection module and domain resources
 import hybrid_checker
 import verdict_store
+from domain_lists.blacklist import (
+    BLACKLIST,
+    remove_from_blacklist,
+    reload_blacklist,
+)
+from domain_lists.whitelist import WHITELIST
 
 # Configure module search path for local backend imports
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -47,17 +48,14 @@ def health():
     """Returns API and loaded model status. Also used by the cloud
     platform's load balancer to confirm this instance is ready to
     receive traffic before routing requests to it."""
-    return (
-        jsonify({
-            "status": "ok",
-            "model_loaded": hybrid_checker._model is not None,
-            "model_name": hybrid_checker._model_name,
-            "uses_scaler": hybrid_checker._uses_scaler,
-            "blacklist_domains": len(BLACKLIST),
-            "whitelist_domains": len(WHITELIST),
-        }),
-        200,
-    )
+    return jsonify({
+        "status": "ok",
+        "model_loaded": hybrid_checker._model is not None,
+        "model_name": hybrid_checker._model_name,
+        "uses_scaler": hybrid_checker._uses_scaler,
+        "blacklist_domains": len(BLACKLIST),
+        "whitelist_domains": len(WHITELIST),
+    }), 200
 
 
 # Define route for URL prediction and analysis
@@ -69,19 +67,16 @@ def predict():
     # Extract and validate payload presence
     data = request.get_json(silent=True)
     if not data or "url" not in data:
-        return (
-            jsonify({
-                "verdict": "error",
-                "is_phishing": False,
-                "confidence": 0.0,
-                "detection_layer": "none",
-                "explanation": "Request body must be JSON with a 'url' field.",
-                "ml_score": None,
-                "domain": "",
-                "error": "missing 'url' field",
-            }),
-            400,
-        )
+        return jsonify({
+            "verdict": "error",
+            "is_phishing": False,
+            "confidence": 0.0,
+            "detection_layer": "none",
+            "explanation": "Request body must be JSON with a 'url' field.",
+            "ml_score": None,
+            "domain": "",
+            "error": "missing 'url' field",
+        }), 400
 
     # Extract and normalize the target URL
     raw_url = data.get("url", "")
@@ -89,19 +84,16 @@ def predict():
 
     # Validate non-empty URL string
     if not url:
-        return (
-            jsonify({
-                "verdict": "error",
-                "is_phishing": False,
-                "confidence": 0.0,
-                "detection_layer": "none",
-                "explanation": "Empty URL received.",
-                "ml_score": None,
-                "domain": "",
-                "error": "empty url",
-            }),
-            400,
-        )
+        return jsonify({
+            "verdict": "error",
+            "is_phishing": False,
+            "confidence": 0.0,
+            "detection_layer": "none",
+            "explanation": "Empty URL received.",
+            "ml_score": None,
+            "domain": "",
+            "error": "empty url",
+        }), 400
 
     # Execute URL inspection cascade
     result = hybrid_checker.check_url(url)
@@ -123,33 +115,27 @@ def predict():
 
 # ---- Admin endpoints: manage the runtime-learned blacklist ----
 
-
 @app.route("/blacklist", methods=["GET"])
 def list_blacklist():
     """Returns the current in-memory blacklist domain count and a sample."""
     sample = sorted(BLACKLIST)[:50]
-    return (
-        jsonify({
-            "total_domains": len(BLACKLIST),
-            "sample": sample,
-        }),
-        200,
-    )
+    return jsonify({
+        "total_domains": len(BLACKLIST),
+        "sample": sample,
+    }), 200
 
 
 @app.route("/blacklist/<domain>", methods=["DELETE"])
 def delete_blacklist_domain(domain):
     """Removes a domain from both the in-memory BLACKLIST set and the
     database in one step, so the removal takes effect immediately
-    without restarting the server."""
+    without restarting the server.
+    """
     removed = remove_from_blacklist(domain)
-    return (
-        jsonify({
-            "domain": domain.lower().strip(),
-            "removed": removed,
-        }),
-        (200 if removed else 404),
-    )
+    return jsonify({
+        "domain": domain.lower().strip(),
+        "removed": removed,
+    }), (200 if removed else 404)
 
 
 @app.route("/blacklist/reload", methods=["POST"])
@@ -166,17 +152,13 @@ def reload_blacklist_route():
     in-memory set.
     """
     total = reload_blacklist()
-    return (
-        jsonify({
-            "status": "reloaded",
-            "total_domains": total,
-        }),
-        200,
-    )
+    return jsonify({
+        "status": "reloaded",
+        "total_domains": total,
+    }), 200
 
 
 # ---- User override endpoints ----
-
 
 @app.route("/override", methods=["POST"])
 def record_override():
@@ -187,12 +169,7 @@ def record_override():
     """
     data = request.get_json(silent=True)
     if not data or "url" not in data:
-        return (
-            jsonify(
-                {"error": "Request body must be JSON with a 'url' field."}
-            ),
-            400,
-        )
+        return jsonify({"error": "Request body must be JSON with a 'url' field."}), 400
 
     url = _normalise_input_url(data.get("url", ""))
     if not url:
@@ -201,15 +178,12 @@ def record_override():
     tab_id = data.get("tab_id")
     override_id = verdict_store.record_override(url, tab_id)
 
-    return (
-        jsonify({
-            "status": "recorded",
-            "override_id": override_id,
-            "url": url,
-            "tab_id": tab_id,
-        }),
-        201,
-    )
+    return jsonify({
+        "status": "recorded",
+        "override_id": override_id,
+        "url": url,
+        "tab_id": tab_id,
+    }), 201
 
 
 @app.route("/override/check", methods=["GET"])
@@ -228,19 +202,15 @@ def check_override():
     tab_id = request.args.get("tab_id")
     already_overridden = verdict_store.check_override(url, tab_id)
 
-    return (
-        jsonify({
-            "url": url,
-            "tab_id": tab_id,
-            "already_overridden": already_overridden,
-            "suppression_window_hours": verdict_store.OVERRIDE_SUPPRESSION_HOURS,
-        }),
-        200,
-    )
+    return jsonify({
+        "url": url,
+        "tab_id": tab_id,
+        "already_overridden": already_overridden,
+        "suppression_window_hours": verdict_store.OVERRIDE_SUPPRESSION_HOURS,
+    }), 200
 
 
 # ---- Stats / evaluation endpoint ----
-
 
 @app.route("/stats", methods=["GET"])
 def stats():
@@ -253,13 +223,10 @@ def stats():
     verdict_stats = verdict_store.get_verdict_stats()
     overridden = verdict_store.get_most_overridden_domains()
 
-    return (
-        jsonify({
-            **verdict_stats,
-            "frequently_overridden_domains": overridden,
-        }),
-        200,
-    )
+    return jsonify({
+        **verdict_stats,
+        "frequently_overridden_domains": overridden,
+    }), 200
 
 
 # Define 404 error handler
