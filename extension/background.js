@@ -16,6 +16,24 @@
  * AFTER the redirect, and is used to silently auto-approve the navigation
  * (skip re-showing a warning the user already dismissed) rather than to
  * decide whether to redirect in the first place.
+ *
+ * IMPORTANT ("Go Back to Safety" fix):
+ * The interstitial/overlay "Go Back to Safety" button used to call
+ * window.history.back() directly. That triggers a brand-new top-level
+ * navigation back to the previous page, which onBeforeNavigate intercepts
+ * just like any other navigation - so instead of landing on the previous
+ * page, the user got redirected to ANOTHER interstitial to re-check it.
+ * Native browser back-button clicks mostly avoided this because Chrome can
+ * often restore the previous page from the back/forward cache (bfcache)
+ * rather than issuing a fresh navigation the same way a scripted
+ * history.back() call does.
+ *
+ * Fix: track the last known "good" URL per tab (the URL we were on right
+ * before redirecting to the interstitial). When the user asks to go back,
+ * we pre-approve that URL via pendingApprovals (the same one-shot bypass
+ * mechanism used for overrides) and use chrome.tabs.goBack(), so when
+ * onBeforeNavigate fires again for it, it passes straight through instead
+ * of triggering another check.
  */
 
 // const API_URL = "http://localhost:5000/predict";
@@ -24,12 +42,16 @@
 const API_URL = "https://phishing-guard-csrf.onrender.com/predict";
 const OVERRIDE_URL = "https://phishing-guard-csrf.onrender.com/override";
 const OVERRIDE_CHECK_URL = "https://phishing-guard-csrf.onrender.com/override/check";
-const FETCH_TIMEOUT_MS = 4000;
+const FETCH_TIMEOUT_MS = 30000;
 const INTERSTITIAL_URL = chrome.runtime.getURL("interstitial.html");
 
 // tabId -> URL allowed through without interception.
 // One-shot bypass for cleared destinations.
 const pendingApprovals = new Map();
+
+// tabId -> URL the tab was on immediately before being redirected to the
+// interstitial. Used to power the "Go Back to Safety" action.
+const lastKnownGoodUrl = new Map();
 
 // Execute a fetch request with a timeout.
 async function fetchWithTimeout(url, options, timeoutMs) {
@@ -134,7 +156,7 @@ async function wasRecentlyOverridden(tabId, url) {
 }
 
 // Intercepts top-level navigations before loading.
-chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (details.frameId !== 0) return;
   if (!isCheckableUrl(details.url)) return;
 
@@ -146,6 +168,18 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 
   // Skip interstitial page navigations
   if (details.url.startsWith(chrome.runtime.getURL(""))) return;
+
+  // Record where this tab was BEFORE we redirect it away, so a later
+  // "Go Back to Safety" click has a known-good URL to return to. Read this
+  // before chrome.tabs.update() below overwrites the tab's current URL.
+  try {
+    const tab = await chrome.tabs.get(details.tabId);
+    if (tab && isCheckableUrl(tab.url)) {
+      lastKnownGoodUrl.set(details.tabId, tab.url);
+    }
+  } catch (err) {
+    // Tab may not exist yet (e.g. first navigation in a new tab) — fine to skip.
+  }
 
   // Redirect immediately, synchronously - no awaited work runs before
   // this call. This is what actually prevents the real page from
@@ -218,10 +252,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  // "Go Back to Safety" — pre-approve the last known-good URL for this tab
+  // (so onBeforeNavigate lets it through without re-checking) and navigate
+  // back using the tab history. Falls back to Google if we have no known
+  // previous URL or no history to go back to.
+  if (message && message.type === "GO_BACK") {
+    const tabId = sender.tab && sender.tab.id;
+    if (tabId == null) {
+      sendResponse(false);
+      return false;
+    }
+
+    (async () => {
+      const prevUrl = lastKnownGoodUrl.get(tabId);
+      if (prevUrl) {
+        pendingApprovals.set(tabId, prevUrl);
+      }
+
+      try {
+        await chrome.tabs.goBack(tabId);
+      } catch (err) {
+        // No back history available in this tab — fall back to a safe default.
+        const fallbackUrl = prevUrl || "https://www.google.com";
+        pendingApprovals.set(tabId, fallbackUrl);
+        await chrome.tabs.update(tabId, { url: fallbackUrl });
+      }
+
+      lastKnownGoodUrl.delete(tabId);
+      sendResponse(true);
+    })();
+
+    return true;
+  }
 });
 
-// Clean up storage and pending approvals when a tab closes
+// Clean up storage and pending approvals when a tab closes.
 chrome.tabs.onRemoved.addListener((tabId) => {
   chrome.storage.local.remove(String(tabId));
   pendingApprovals.delete(tabId);
+  lastKnownGoodUrl.delete(tabId);
 });

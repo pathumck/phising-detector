@@ -192,12 +192,22 @@ function showBlockOverlay(verdict) {
       "margin-bottom: 10px",
     ].join("; ")
   );
+
+  // Route through the background worker instead of window.history.back().
+  // A raw history.back() call issues a fresh top-level navigation, which
+  // chrome.webNavigation.onBeforeNavigate would intercept and redirect to
+  // ANOTHER interstitial. Sending GO_BACK lets background.js pre-approve
+  // the previous URL before triggering the navigation, so it passes
+  // straight through. See background.js for the full explanation.
   goBackBtn.addEventListener("click", () => {
-    if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      window.location.href = "https://www.google.com";
-    }
+    chrome.runtime.sendMessage({ type: "GO_BACK" }).catch(() => {
+      // Fallback in case the background worker is unreachable.
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.href = "https://www.google.com";
+      }
+    });
   });
 
   const continueBtn = document.createElement("button");

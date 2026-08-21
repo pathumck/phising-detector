@@ -94,8 +94,8 @@ function renderOffline(url) {
     <div class="domain">${url}</div>
     <div class="status-line" style="margin-bottom:14px;">Detection server unreachable.</div>
     <div class="details">
-      <div><span>Could not reach the Phishing Guard backend at localhost:5000.
-      Make sure Flask (app.py) is running, then retry.</span></div>
+      <div><span>Could not reach the Phishing Guard backend.
+      Make sure the server is active, then retry.</span></div>
     </div>
   `;
   const retryBtn = document.createElement("button");
@@ -124,12 +124,21 @@ function renderBlockedDetails(verdict) {
   const goBackBtn = document.createElement("button");
   goBackBtn.id = "goBackBtn";
   goBackBtn.textContent = "Go Back to Safety";
+  // Route through the background worker instead of window.history.back().
+  // A raw history.back() call issues a fresh top-level navigation, which
+  // chrome.webNavigation.onBeforeNavigate would intercept and redirect to
+  // ANOTHER interstitial for the previous page. Sending GO_BACK lets
+  // background.js pre-approve the previous URL before triggering the
+  // navigation, so it passes straight through. See background.js.
   goBackBtn.addEventListener("click", () => {
-    if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      window.location.href = "https://www.google.com";
-    }
+    chrome.runtime.sendMessage({ type: "GO_BACK" }).catch(() => {
+      // Fallback in case the background worker is unreachable.
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.href = "https://www.google.com";
+      }
+    });
   });
 
   const continueBtn = document.createElement("button");
