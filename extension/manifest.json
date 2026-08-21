@@ -5,7 +5,10 @@
   "description": "Real-time phishing detection using a four-layer hybrid cascade (blacklist, whitelist, lookalike detection, ML model).",
 
   "permissions": ["tabs", "storage", "activeTab", "scripting", "webNavigation"],
-  "host_permissions": ["http://localhost:5000/*"],
+  "host_permissions": [
+    "http://localhost:5000/*",
+    "https://phishing-guard-csrf.onrender.com/*"
+  ],
 
   "background": {
     "service_worker": "background.js"
