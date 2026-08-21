@@ -2,6 +2,24 @@
 Layer 2 of the hybrid detection system - Whitelist & Safe TLD Verification.
 Now sourced from phishing_guard.db (whitelist_domains, government_tlds,
 multipart_tlds tables) instead of tranco_top1m.csv + hardcoded sets.
+
+NOTE ON DB_PATH:
+DB_PATH is resolved from the DB_PATH environment variable first, falling
+back to the local relative path for development. This lets a cloud
+platform (e.g. Render) point the app at a database file on a persistent
+disk without any code changes - only an env var needs to be set.
+
+NOTE ON WHITELIST_NAMES_BY_LENGTH:
+Layer 3's typosquatting check (lookalike_detector.py) needs to compare a
+candidate brand against every trusted brand name to find near-matches
+within edit-distance 2. Looping over the full ~285k-entry WHITELIST_NAMES
+set for every request is slow (multi-second). Since a Levenshtein distance
+of <=2 is only mathematically possible when the two strings' lengths
+differ by <=2, we pre-group brand names by length here at startup, so
+the typosquatting check only has to compare against a small relevant
+subset instead of the entire whitelist. This does not change which
+matches are found - it only skips candidates that were guaranteed to
+fail the distance check anyway.
 """
 
 import os
@@ -9,13 +27,20 @@ import sqlite3
 from urllib.parse import urlparse
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(_HERE, "..", "phishing_guard.db")
+DB_PATH = os.environ.get(
+    "DB_PATH",
+    os.path.join(_HERE, "..", "phishing_guard.db"),
+)
 
 # Full registrable domains used by Layer 2 whitelist check
 WHITELIST: set[str] = set()
 
 # Brand names used by Layer 3 lookalike detector
 WHITELIST_NAMES: set[str] = set()
+
+# Brand names grouped by length, used by Layer 3's typosquatting check
+# to avoid looping over the entire WHITELIST_NAMES set on every request.
+WHITELIST_NAMES_BY_LENGTH: dict[int, set[str]] = {}
 
 # Populated at init from multipart_tlds table (was a hardcoded set before)
 MULTI_PART_TLDS: set[str] = set()
@@ -37,6 +62,7 @@ _GENERIC_NAMES = {
 
 
 def _get_conn() -> sqlite3.Connection:
+    """Open a connection to the shared SQLite database."""
     return sqlite3.connect(DB_PATH)
 
 
@@ -55,13 +81,38 @@ def _extract_registrable_domain(hostname: str) -> str:
     return ".".join(parts[-2:])
 
 
+def _build_length_index(names: set[str]) -> dict[int, set[str]]:
+    """Group brand names by string length for fast candidate filtering."""
+    index: dict[int, set[str]] = {}
+    for name in names:
+        index.setdefault(len(name), set()).add(name)
+    return index
+
+
+def get_length_bucketed_candidates(target_len: int, max_dist: int = 2) -> set[str]:
+    """Return the set of trusted brand names whose length is within
+
+    max_dist of target_len - the only names that could possibly be
+    within max_dist Levenshtein distance of a string of that length.
+    Used by lookalike_detector.py's typosquatting check instead of
+    looping over the full WHITELIST_NAMES set.
+    """
+    candidates: set[str] = set()
+    for length in range(max(1, target_len - max_dist), target_len + max_dist + 1):
+        candidates |= WHITELIST_NAMES_BY_LENGTH.get(length, set())
+    return candidates
+
+
 def initialise_whitelist() -> None:
     """Load whitelist domains, government TLDs, and multi-part TLDs from DB."""
-    global WHITELIST, WHITELIST_NAMES, MULTI_PART_TLDS, GOVERNMENT_TLDS
+    global WHITELIST, WHITELIST_NAMES, WHITELIST_NAMES_BY_LENGTH
+    global MULTI_PART_TLDS, GOVERNMENT_TLDS
 
     if not os.path.exists(DB_PATH):
-        print(f"[whitelist] WARNING: Database not found at {DB_PATH}. "
-              f"Run migrate_to_sqlite.py first.")
+        print(
+            f"[whitelist] WARNING: Database not found at {DB_PATH}. "
+            f"Run migrate_to_sqlite.py first."
+        )
         return
 
     conn = _get_conn()
@@ -85,14 +136,18 @@ def initialise_whitelist() -> None:
 
         WHITELIST = new_whitelist
         WHITELIST_NAMES = new_whitelist_names
+        WHITELIST_NAMES_BY_LENGTH = _build_length_index(new_whitelist_names)
 
     finally:
         conn.close()
 
-    print(f"[whitelist] Loaded from DB: {len(WHITELIST):,} registrable domains, "
-          f"{len(WHITELIST_NAMES):,} brand names, "
-          f"{len(MULTI_PART_TLDS)} multi-part TLDs, "
-          f"{len(GOVERNMENT_TLDS)} government TLDs.")
+    print(
+        f"[whitelist] Loaded from DB: {len(WHITELIST):,} registrable domains, "
+        f"{len(WHITELIST_NAMES):,} brand names "
+        f"({len(WHITELIST_NAMES_BY_LENGTH)} distinct lengths indexed), "
+        f"{len(MULTI_PART_TLDS)} multi-part TLDs, "
+        f"{len(GOVERNMENT_TLDS)} government TLDs."
+    )
 
 
 def check_whitelist(url: str) -> dict | None:

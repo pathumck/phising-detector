@@ -6,6 +6,17 @@ Execution Order (Stops at first match):
 2. Method A: TLD Swap & Subdomain Impersonation
 3. Method D: Fake ccTLD / Multi-Part-TLD Impersonation
 4. Method B: Levenshtein Typosquatting & L33tspeak Substitutions
+
+PERFORMANCE NOTE (Method B):
+_check_typosquatting() used to loop over the entire WHITELIST_NAMES set
+(~285k brand names) on every call, computing a Levenshtein distance
+against each one - multi-second response times on Render for any URL
+that wasn't an exact blacklist/whitelist match. Since a Levenshtein
+distance of <=2 is only possible when two strings differ in length by
+<=2, we now only compare against brand names of a similar length, using
+whitelist.get_length_bucketed_candidates(). This does not change which
+matches get found or their confidence scores - it only skips candidates
+that were mathematically guaranteed to fail the distance check anyway.
 """
 
 import unicodedata
@@ -15,37 +26,113 @@ import domain_lists.whitelist as _whitelist
 
 # Cyrillic characters visually identical to Latin
 CYRILLIC_TO_LATIN = {
-    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c",
-    "х": "x", "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d",
+    "а": "a",
+    "е": "e",
+    "о": "o",
+    "р": "p",
+    "с": "c",
+    "х": "x",
+    "і": "i",
+    "ј": "j",
+    "ѕ": "s",
+    "ԁ": "d",
 }
 
 # Digit substitutions used by Method B for typosquatting
 DIGIT_TO_LETTER = {
-    "0": "o", "1": "l", "3": "e", "4": "a",
-    "5": "s", "6": "g", "7": "t", "8": "b",
+    "0": "o",
+    "1": "l",
+    "3": "e",
+    "4": "a",
+    "5": "s",
+    "6": "g",
+    "7": "t",
+    "8": "b",
 }
 
 _EXTRA_CCTLDS = {
-    "au", "uk", "lk", "nz", "us", "ca", "in", "za",
-    "sg", "ie", "de", "fr", "jp", "cn", "br", "ru",
-    "kr", "my", "ph", "pk", "bd", "np", "ae",
+    "au",
+    "uk",
+    "lk",
+    "nz",
+    "us",
+    "ca",
+    "in",
+    "za",
+    "sg",
+    "ie",
+    "de",
+    "fr",
+    "jp",
+    "cn",
+    "br",
+    "ru",
+    "kr",
+    "my",
+    "ph",
+    "pk",
+    "bd",
+    "np",
+    "ae",
 }
 
 _GENERIC_TLDS = {"com", "net", "org", "info", "biz", "co"}
 
 _SENSITIVE_KEYWORDS = {
-    "finance", "financial", "bank", "banking", "gov", "government",
-    "tax", "treasury", "customs", "ministry", "embassy", "passport",
-    "visa", "immigration", "trade", "export", "import", "revenue",
-    "authority", "agency", "department", "national", "federal",
-    "secure", "verify", "account", "login", "portal", "payment",
+    "finance",
+    "financial",
+    "bank",
+    "banking",
+    "gov",
+    "government",
+    "tax",
+    "treasury",
+    "customs",
+    "ministry",
+    "embassy",
+    "passport",
+    "visa",
+    "immigration",
+    "trade",
+    "export",
+    "import",
+    "revenue",
+    "authority",
+    "agency",
+    "department",
+    "national",
+    "federal",
+    "secure",
+    "verify",
+    "account",
+    "login",
+    "portal",
+    "payment",
 }
 
 _GENERIC_SUBDOMAINS = {
-    "www", "mail", "email", "ftp", "cdn", "api",
-    "app", "web", "blog", "m", "en", "static",
-    "media", "images", "shop", "edu", "gov",
-    "support", "help", "news", "portal", "admin",
+    "www",
+    "mail",
+    "email",
+    "ftp",
+    "cdn",
+    "api",
+    "app",
+    "web",
+    "blog",
+    "m",
+    "en",
+    "static",
+    "media",
+    "images",
+    "shop",
+    "edu",
+    "gov",
+    "support",
+    "help",
+    "news",
+    "portal",
+    "admin",
 }
 
 
@@ -180,12 +267,19 @@ def _check_homograph(hostname: str) -> dict | None:
 def _check_tld_swap(hostname: str, brand: str) -> dict | None:
     """Method A - Detect TLD swap and subdomain impersonation."""
     parts = hostname.split(".")
-    
+
     # Calculate registrable domain to prevent flagging whitelisted parent domains
-    registrable = ".".join(parts[-3:]) if ".".join(parts[-2:]) in _whitelist.MULTI_PART_TLDS else ".".join(parts[-2:])
+    registrable = (
+        ".".join(parts[-3:])
+        if ".".join(parts[-2:]) in _whitelist.MULTI_PART_TLDS
+        else ".".join(parts[-2:])
+    )
 
     # Exact brand under a non-whitelisted TLD
-    if brand in _whitelist.WHITELIST_NAMES and registrable not in _whitelist.WHITELIST:
+    if (
+        brand in _whitelist.WHITELIST_NAMES
+        and registrable not in _whitelist.WHITELIST
+    ):
         return {
             "verdict": "phishing",
             "is_phishing": True,
@@ -200,7 +294,11 @@ def _check_tld_swap(hostname: str, brand: str) -> dict | None:
 
     # Subdomain impersonation check
     if len(parts) > 2 and registrable not in _whitelist.WHITELIST:
-        subdomains = parts[:-2] if ".".join(parts[-2:]) not in _whitelist.MULTI_PART_TLDS else parts[:-3]
+        subdomains = (
+            parts[:-2]
+            if ".".join(parts[-2:]) not in _whitelist.MULTI_PART_TLDS
+            else parts[:-3]
+        )
         for sub in subdomains:
             if sub in _GENERIC_SUBDOMAINS:
                 continue
@@ -229,7 +327,10 @@ def _check_cctld_impersonation(hostname: str) -> dict | None:
     tld = parts[-1]
     sld = parts[-2]
 
-    if tld not in _GENERIC_TLDS or ".".join(parts[-2:]) in _whitelist.MULTI_PART_TLDS:
+    if (
+        tld not in _GENERIC_TLDS
+        or ".".join(parts[-2:]) in _whitelist.MULTI_PART_TLDS
+    ):
         return None
 
     if len(sld) not in (2, 3):
@@ -275,22 +376,42 @@ def _check_cctld_impersonation(hostname: str) -> dict | None:
 
 
 def _check_typosquatting(hostname: str, brand: str) -> dict | None:
-    """Method B - Detect Levenshtein distance typosquatting and l33tspeak."""
+    """Method B - Detect Levenshtein distance typosquatting and l33tspeak.
+
+    PERFORMANCE: instead of looping over the entire WHITELIST_NAMES set
+    (~285k entries), we only compare against brand names whose length is
+    within max_dist of our target's length, via
+    whitelist.get_length_bucketed_candidates(). A Levenshtein distance of
+    <=2 is mathematically impossible for strings whose lengths differ by
+    more than 2, so this is a pure speed optimisation - it does not
+    change which matches are found, their distances, or their confidence
+    scores.
+    """
     compare_brand = _normalise_digits(brand)
-    digit_substituted = (compare_brand != brand)
+    digit_substituted = compare_brand != brand
 
-    best_dist = 999
-    best_match = None
+    # Fast path: exact match is O(1) via the set, skip the loop entirely.
+    if compare_brand in _whitelist.WHITELIST_NAMES:
+        best_dist = 0
+        best_match = compare_brand
+    else:
+        best_dist = 999
+        best_match = None
 
-    for trusted in _whitelist.WHITELIST_NAMES:
-        dist = _levenshtein(compare_brand, trusted, max_dist=2)
+        max_dist = 2
+        candidates = _whitelist.get_length_bucketed_candidates(
+            len(compare_brand), max_dist=max_dist
+        )
 
-        if dist < best_dist:
-            best_dist = dist
-            best_match = trusted
+        for trusted in candidates:
+            dist = _levenshtein(compare_brand, trusted, max_dist=max_dist)
 
-        if best_dist == 0:
-            break
+            if dist < best_dist:
+                best_dist = dist
+                best_match = trusted
+
+            if best_dist == 0:
+                break
 
     if best_match is None:
         return None
