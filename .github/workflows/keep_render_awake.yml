@@ -1,0 +1,32 @@
+name: Keep Render Backend Awake
+
+on:
+  schedule:
+    # Runs every 5 minutes to keep the Render service awake.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}   # allows manual "Run workflow" trigger from the Actions tab
+
+jobs:
+  ping-health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health endpoint
+        env:
+          RENDER_URL: ${{ vars.RENDER_URL }}
+        run: |
+          if [ -z "$RENDER_URL" ]; then
+            echo "RENDER_URL repository variable is not set. See README/workflow docs for setup."
+            exit 1
+          fi
+
+          echo "Pinging ${RENDER_URL%/}/health ..."
+          http_status=$(curl -s -o /tmp/health_response.json -w "%{http_code}" "${RENDER_URL%/}/health")
+
+          echo "HTTP status: $http_status"
+          echo "Response body:"
+          cat /tmp/health_response.json
+
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "Health check failed with status $http_status"
+            exit 1
+          fi
