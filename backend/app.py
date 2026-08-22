@@ -7,9 +7,13 @@ import os
 import sys
 import time
 
-
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+
+# Configure module search path for local backend imports
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 # Import local detection module and domain resources
 import hybrid_checker
@@ -22,11 +26,6 @@ from domain_lists.blacklist import (
     count_blacklist_by_source,
 )
 from domain_lists.whitelist import WHITELIST
-
-# Configure module search path for local backend imports
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
 
 # Initialize Flask application instance
 app = Flask(__name__)
@@ -58,6 +57,22 @@ def health():
         "blacklist_domains": len(BLACKLIST),
         "whitelist_domains": len(WHITELIST),
     }), 200
+
+
+# ---- Dashboard ----
+
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
+    """Serves the standalone admin dashboard (dashboard.html) from the same
+    origin as the API, so it can fetch /stats, /verdicts, /overrides, and
+    /blacklist without any CORS configuration.
+
+    dashboard.html MUST sit in the same directory as this file (_HERE) -
+    send_from_directory will 404 (caught by our own not_found() handler
+    below) if it's missing or placed anywhere else, e.g. a static/
+    subfolder or the repo root.
+    """
+    return send_from_directory(_HERE, "dashboard.html")
 
 
 # Define route for URL prediction and analysis
@@ -105,7 +120,7 @@ def predict():
     result["response_time_ms"] = elapsed_ms
 
     # Persist to verdict_log for analytics/evaluation. Errors are
-    # never allowed to affect the response returned to the caller
+    # never allowed to affect the response returned to the caller.
     if not result.get("error"):
         try:
             verdict_store.log_verdict(url, result, elapsed_ms)
@@ -120,7 +135,6 @@ def predict():
 @app.route("/blacklist", methods=["GET"])
 def list_blacklist():
     """Returns blacklist domains, optionally filtered by source, plus a
-
     per-source breakdown count.
 
     Query params:
@@ -187,7 +201,7 @@ def record_override():
     """Records that a user dismissed a warning and proceeded to a URL anyway.
 
     Called by the extension's "proceed anyway" button. Body: {"url": "...",
-    "tab_id": "..."}  (tab_id optional)
+    "tab_id": "..."} (tab_id optional)
     """
     data = request.get_json(silent=True)
     if not data or "url" not in data:
@@ -235,7 +249,6 @@ def check_override():
 @app.route("/overrides", methods=["GET"])
 def list_overrides():
     """Returns a raw, newest-first feed of individual override events, each
-
     annotated with the verdict/layer/confidence the user bypassed.
 
     This is distinct from /stats' `frequently_overridden_domains`, which is
@@ -260,7 +273,6 @@ def list_overrides():
 @app.route("/verdicts", methods=["GET"])
 def list_verdicts():
     """Returns a paginated, newest-first feed of verdict_log rows, optionally
-
     filtered to a single detection layer.
 
     Unlike /stats' `recent` (hardcoded to the last 20, unfiltered), this
@@ -292,7 +304,6 @@ def list_verdicts():
 def stats():
     """Aggregated verdict_log + user_overrides stats for the admin dashboard and
     project evaluation chapter: per-layer trigger counts, verdict split,
-
     average latency, and domains that keep getting overridden (candidate false
     positives).
     """
