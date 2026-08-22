@@ -18,6 +18,8 @@ from domain_lists.blacklist import (
     BLACKLIST,
     remove_from_blacklist,
     reload_blacklist,
+    get_blacklist_domains,
+    count_blacklist_by_source,
 )
 from domain_lists.whitelist import WHITELIST
 
@@ -117,11 +119,31 @@ def predict():
 
 @app.route("/blacklist", methods=["GET"])
 def list_blacklist():
-    """Returns the current in-memory blacklist domain count and a sample."""
-    sample = sorted(BLACKLIST)[:50]
+    """Returns blacklist domains, optionally filtered by source, plus a
+
+    per-source breakdown count.
+
+    Query params:
+      source - optional, e.g. "ml_auto_learned" or "phishtank". Restricts
+               both the returned sample and its size to that source.
+      limit  - optional, default 50, max rows returned in `domains`.
+
+    `by_source` always reflects the FULL table regardless of the source
+    filter, so the dashboard can show e.g. "47 self-learned / 11,842 total"
+    even while only listing the 47 self-learned ones.
+    """
+    source = request.args.get("source")
+    limit = request.args.get("limit", default=50, type=int)
+    limit = max(1, min(limit, 500))
+
+    domains = get_blacklist_domains(source=source, limit=limit)
+    by_source = count_blacklist_by_source()
+
     return jsonify({
         "total_domains": len(BLACKLIST),
-        "sample": sample,
+        "by_source": by_source,
+        "source_filter": source,
+        "domains": domains,
     }), 200
 
 
@@ -207,6 +229,60 @@ def check_override():
         "tab_id": tab_id,
         "already_overridden": already_overridden,
         "suppression_window_hours": verdict_store.OVERRIDE_SUPPRESSION_HOURS,
+    }), 200
+
+
+@app.route("/overrides", methods=["GET"])
+def list_overrides():
+    """Returns a raw, newest-first feed of individual override events, each
+
+    annotated with the verdict/layer/confidence the user bypassed.
+
+    This is distinct from /stats' `frequently_overridden_domains`, which is
+    aggregated by domain (2+ overrides only). This endpoint returns every
+    override event, including one-offs, which is what a live demo table
+    wants to show as it happens.
+
+    Query params: limit - optional, default 50, max 500.
+    """
+    limit = request.args.get("limit", default=50, type=int)
+    limit = max(1, min(limit, 500))
+
+    overrides = verdict_store.get_all_overrides(limit=limit)
+    return jsonify({
+        "count": len(overrides),
+        "overrides": overrides,
+    }), 200
+
+
+# ---- Verdict log endpoint ----
+
+@app.route("/verdicts", methods=["GET"])
+def list_verdicts():
+    """Returns a paginated, newest-first feed of verdict_log rows, optionally
+
+    filtered to a single detection layer.
+
+    Unlike /stats' `recent` (hardcoded to the last 20, unfiltered), this
+    supports a larger page size and a layer filter, e.g.
+    /verdicts?layer=ml_model&limit=100 to show only what the ML layer has
+    caught during a demo.
+
+    Query params:
+      limit - optional, default 50, max 500.
+      layer - optional, restricts to one detection_layer value
+              (e.g. "blacklist", "whitelist", "lookalike_typosquatting",
+              "ml_model").
+    """
+    limit = request.args.get("limit", default=50, type=int)
+    limit = max(1, min(limit, 500))
+    layer = request.args.get("layer")
+
+    verdicts = verdict_store.get_recent_verdicts(limit=limit, layer=layer)
+    return jsonify({
+        "count": len(verdicts),
+        "layer_filter": layer,
+        "verdicts": verdicts,
     }), 200
 
 
