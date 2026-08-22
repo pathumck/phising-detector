@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Phishing Guard — Detection Dashboard</title>
+<style>
+  :root {
+    --bg: #EDF4FC;
+    --bg-gradient-from: #FFFFFF;
+    --card: #FFFFFF;
+    --card-border: #D9E6F5;
+    --card-alt: #EFF6FD;
+    --text: #10233F;
+    --muted: #5D7290;
+    --accent: #0B84D6;
+    --accent-soft: #38BDF8;
+    --success: #16A34A;
+    --danger: #DC2626;
+    --warning: #D97706;
+    --track: #DCE9F8;
+    --row-hover: #F1F8FE;
+    --shadow: rgba(11, 132, 214, 0.08);
+    --divider: #E4EEFA;
+    --scrollbar-thumb: #BFDBF5;
+    --error-bg: #FEF2F2;
+    --error-border: #FECACA;
+    --error-text: #B91C1C;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+
+  html[data-theme="dark"] {
+    --bg: #0B1220;
+    --bg-gradient-from: #101B32;
+    --card: #141C2E;
+    --card-border: #1E293B;
+    --card-alt: #101A2E;
+    --text: #F1F5F9;
+    --muted: #8B98AF;
+    --accent: #38BDF8;
+    --accent-soft: #7DD3FC;
+    --success: #22C55E;
+    --danger: #F87171;
+    --warning: #FBBF24;
+    --track: #1B2A45;
+    --row-hover: #101A30;
+    --shadow: rgba(0, 0, 0, 0.35);
+    --divider: #1B2540;
+    --scrollbar-thumb: #23304C;
+    --error-bg: rgba(239, 68, 68, 0.1);
+    --error-border: rgba(239, 68, 68, 0.4);
+    --error-text: #FCA5A5;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-gradient-from) 0%, var(--bg) 65%);
+    color: var(--text);
+    font-family: var(--sans);
+    padding: 0 32px 60px;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  .stat-card, .panel, .api-input, button.ghost, select,
+  .source-pill, thead th, tbody td, .domain-item {
+    transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  }
+
+  .topbar {
+    height: 4px;
+    margin: 0 -32px 28px;
+    background: linear-gradient(90deg, #38BDF8 0%, #0B84D6 45%, #6366F1 100%);
+  }
+
+  /* ---- Header ---- */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 26px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-name {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .brand-sub {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-left: 8px;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .api-input {
+    background-color: var(--card-alt);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 8px 12px;
+    width: 300px;
+  }
+
+  .api-input:focus { outline: 1px solid var(--accent); }
+
+  button.ghost {
+    background-color: var(--card);
+    border: 1px solid var(--card-border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    font-family: var(--sans);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  button.ghost:hover { color: var(--text); border-color: #B7D3F0; }
+  button.ghost.on { color: var(--accent); border-color: rgba(11,132,214,0.35); background-color: var(--card-alt); }
+
+  .pulse-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: #C7D9EE;
+  }
+  button.ghost.on .pulse-dot {
+    background-color: var(--accent);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(11,132,214,0.4); }
+    50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(11,132,214,0); }
+  }
+
+  .updated-label {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  /* ---- Layout ---- */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background-color: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 3px var(--shadow);
+  }
+
+  .stat-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 26px;
+    font-weight: 700;
+    font-family: var(--mono);
+  }
+
+  .stat-value.success { color: var(--success); }
+  .stat-value.danger { color: var(--danger); }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.warning { color: var(--warning); }
+
+  .stat-sub {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background-color: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    box-shadow: 0 1px 3px var(--shadow);
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .panel-title {
+    font-size: 13.5px;
+    font-weight: 700;
+  }
+
+  .panel-title .count {
+    color: var(--muted);
+    font-weight: 500;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  select {
+    background-color: var(--card-alt);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: var(--sans);
+  }
+
+  /* ---- Layer breakdown (stepper-derived signature element) ---- */
+  .layer-row {
+    display: grid;
+    grid-template-columns: 150px 1fr 46px;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .layer-name {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: capitalize;
+  }
+
+  .layer-track {
+    height: 8px;
+    border-radius: 4px;
+    background-color: var(--track);
+    overflow: hidden;
+  }
+
+  .layer-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+
+  .layer-count {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: right;
+    color: var(--text);
+  }
+
+  .layer-blacklist .layer-fill { background-color: var(--danger); }
+  .layer-whitelist .layer-fill { background-color: var(--success); }
+  .layer-lookalike .layer-fill { background-color: var(--warning); }
+  .layer-ml .layer-fill { background-color: var(--accent); }
+  .layer-other .layer-fill { background-color: #94A3B8; }
+
+  .empty-note {
+    font-size: 12.5px;
+    color: var(--muted);
+    padding: 10px 0;
+  }
+
+  /* ---- ML-learned blacklist panel ---- */
+  .source-split {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .source-pill {
+    flex: 1;
+    background-color: var(--card-alt);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .source-pill .n {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .source-pill .l {
+    font-size: 10.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+
+  .domain-list {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .domain-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--divider);
+    font-size: 12.5px;
+  }
+  .domain-item:last-child { border-bottom: none; }
+
+  .domain-item .d {
+    font-family: var(--mono);
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  .domain-item .t {
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 11px;
+    flex-shrink: 0;
+    margin-left: 10px;
+  }
+
+  /* ---- Tables ---- */
+  .table-wrap {
+    max-height: 340px;
+    overflow-y: auto;
+    border-radius: 8px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    background-color: var(--card-alt);
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--card-border);
+  }
+
+  tbody td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--divider);
+    vertical-align: top;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background-color: var(--row-hover); }
+
+  .url-cell {
+    font-family: var(--mono);
+    color: var(--text);
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .badge-safe { background-color: rgba(22,163,74,0.12); color: var(--success); }
+  .badge-danger { background-color: rgba(220,38,38,0.12); color: var(--danger); }
+
+  .layer-tag {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .time-cell {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .tables-row {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .tables-row { grid-template-columns: 1fr; }
+  }
+
+  .error-banner {
+    background-color: var(--error-bg);
+    border: 1px solid var(--error-border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12.5px;
+    color: var(--error-text);
+    margin-bottom: 18px;
+    display: none;
+  }
+  .error-banner.show { display: block; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background-color: transparent; }
+</style>
+</head>
+<body>
+
+  <div class="topbar"></div>
+
+  <header>
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34">
+        <defs>
+          <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#38BDF8"/>
+            <stop offset="100%" stop-color="#0B84D6"/>
+          </linearGradient>
+        </defs>
+        <rect width="34" height="34" rx="9" fill="url(#brandGrad)"/>
+        <path d="M17 8L11 10.5v4.2c0 4 2.5 6.6 6 7.3 3.5-.7 6-3.3 6-7.3v-4.2L17 8z" fill="none" stroke="#FFFFFF" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="M14 16.6l2.1 2.1 4-4.2" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand-name">Phishing Guard</span>
+      <span class="brand-sub">Detection Dashboard</span>
+    </div>
+    <div class="controls">
+      <input id="apiBase" class="api-input" type="text" value="http://localhost:5000" spellcheck="false" />
+      <button id="refreshBtn" class="ghost"><span>↻</span> Refresh now</button>
+      <button id="autoBtn" class="ghost on"><span class="pulse-dot"></span> Live (5s)</button>
+      <button id="themeBtn" class="ghost"><span id="themeIcon">🌙</span> <span id="themeLabel">Dark</span></button>
+      <span id="updatedLabel" class="updated-label">—</span>
+    </div>
+  </header>
+
+  <div id="errorBanner" class="error-banner"></div>
+
+  <div class="stat-strip">
+    <div class="stat-card">
+      <div class="stat-label">Total Checks</div>
+      <div class="stat-value accent" id="statTotal">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Safe</div>
+      <div class="stat-value success" id="statSafe">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Phishing Blocked</div>
+      <div class="stat-value danger" id="statPhishing">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Latency</div>
+      <div class="stat-value" id="statLatency">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Blacklist Size</div>
+      <div class="stat-value warning" id="statBlacklist">—</div>
+      <div class="stat-sub" id="statBlacklistSub">&nbsp;</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Detection Layer Breakdown</div>
+      </div>
+      <div id="layerBreakdown"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Self-Learned Blacklist <span class="count" id="mlCount"></span></div>
+      </div>
+      <div class="source-split">
+        <div class="source-pill">
+          <div class="n" id="srcMl">—</div>
+          <div class="l">ML self-learned</div>
+        </div>
+        <div class="source-pill">
+          <div class="n" id="srcSeed">—</div>
+          <div class="l">Seeded (PhishTank)</div>
+        </div>
+      </div>
+      <div class="domain-list" id="mlDomainList">
+        <div class="empty-note">No self-learned domains yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tables-row">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Verdict Log <span class="count" id="verdictCount"></span></div>
+        <select id="layerFilter">
+          <option value="">All layers</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>URL</th><th>Verdict</th><th>Layer</th><th>Conf.</th><th>Time</th></tr>
+          </thead>
+          <tbody id="verdictBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Override Activity <span class="count" id="overrideCount"></span></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>URL</th><th>Bypassed</th><th>When</th></tr>
+          </thead>
+          <tbody id="overrideBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  const apiInput = document.getElementById('apiBase');
+  const errorBanner = document.getElementById('errorBanner');
+  const updatedLabel = document.getElementById('updatedLabel');
+  const autoBtn = document.getElementById('autoBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const layerFilter = document.getElementById('layerFilter');
+  const themeBtn = document.getElementById('themeBtn');
+  const themeIcon = document.getElementById('themeIcon');
+  const themeLabel = document.getElementById('themeLabel');
+
+  let autoRefresh = true;
+  let timer = null;
+  let knownLayers = new Set();
+  let theme = 'light';
+
+  function apiBase() {
+    return apiInput.value.trim().replace(/\/$/, '');
+  }
+
+  function showError(msg) {
+    errorBanner.textContent = msg;
+    errorBanner.classList.add('show');
+  }
+  function clearError() {
+    errorBanner.classList.remove('show');
+  }
+
+  async function getJSON(path) {
+    const res = await fetch(apiBase() + path);
+    if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
+    return res.json();
+  }
+
+  function fmtPct(n) {
+    return n == null ? '—' : Math.round(n * 100) + '%';
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso.replace(' ', 'T') + 'Z');
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (e) { return iso; }
+  }
+
+  function layerClass(layer) {
+    if (!layer) return 'layer-other';
+    if (layer === 'blacklist') return 'layer-blacklist';
+    if (layer === 'whitelist') return 'layer-whitelist';
+    if (layer.startsWith('lookalike') || layer.startsWith('open_redirect')) return 'layer-lookalike';
+    if (layer === 'ml_model') return 'layer-ml';
+    return 'layer-other';
+  }
+
+  function renderLayerBreakdown(byLayer) {
+    const el = document.getElementById('layerBreakdown');
+    const entries = Object.entries(byLayer || {}).sort((a, b) => b[1] - a[1]);
+    if (!entries.length) {
+      el.innerHTML = '<div class="empty-note">No checks logged yet — browse to a URL through the extension to populate this.</div>';
+      return;
+    }
+    const max = Math.max(...entries.map(([, c]) => c));
+    el.innerHTML = entries.map(([layer, count]) => `
+      <div class="layer-row ${layerClass(layer)}">
+        <div class="layer-name">${layer.replace(/_/g, ' ')}</div>
+        <div class="layer-track"><div class="layer-fill" style="width:${max ? (count / max) * 100 : 0}%"></div></div>
+        <div class="layer-count">${count.toLocaleString()}</div>
+      </div>
+    `).join('');
+  }
+
+  function populateLayerFilter(byLayer) {
+    const layers = Object.keys(byLayer || {});
+    let changed = false;
+    layers.forEach(l => { if (!knownLayers.has(l)) { knownLayers.add(l); changed = true; } });
+    if (!changed) return;
+    const current = layerFilter.value;
+    layerFilter.innerHTML = '<option value="">All layers</option>' +
+      Array.from(knownLayers).sort().map(l => `<option value="${l}">${l.replace(/_/g, ' ')}</option>`).join('');
+    layerFilter.value = current;
+  }
+
+  function renderVerdicts(data) {
+    document.getElementById('verdictCount').textContent = `(${data.count})`;
+    const body = document.getElementById('verdictBody');
+    if (!data.verdicts.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty-note">No verdicts logged yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = data.verdicts.map(v => `
+      <tr>
+        <td class="url-cell" title="${v.url}">${v.domain || v.url}</td>
+        <td><span class="badge ${v.is_phishing === false && v.verdict === 'safe' ? 'badge-safe' : (v.verdict === 'phishing' ? 'badge-danger' : 'badge-safe')}">${v.verdict}</span></td>
+        <td class="layer-tag">${(v.detection_layer || '').replace(/_/g, ' ')}</td>
+        <td>${fmtPct(v.confidence)}</td>
+        <td class="time-cell">${fmtTime(v.checked_at)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderOverrides(data) {
+    document.getElementById('overrideCount').textContent = `(${data.count})`;
+    const body = document.getElementById('overrideBody');
+    if (!data.overrides.length) {
+      body.innerHTML = '<tr><td colspan="3" class="empty-note">No overrides recorded yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = data.overrides.map(o => `
+      <tr>
+        <td class="url-cell" title="${o.url}">${o.url}</td>
+        <td><span class="layer-tag">${(o.detection_layer || '—').replace(/_/g, ' ')}</span> · ${fmtPct(o.confidence)}</td>
+        <td class="time-cell">${fmtTime(o.overridden_at)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderMlBlacklist(blData) {
+    const bySource = blData.by_source || {};
+    const mlCount = bySource.ml_auto_learned || 0;
+    const seedCount = Object.entries(bySource).filter(([s]) => s !== 'ml_auto_learned')
+      .reduce((sum, [, c]) => sum + c, 0);
+
+    document.getElementById('srcMl').textContent = mlCount.toLocaleString();
+    document.getElementById('srcSeed').textContent = seedCount.toLocaleString();
+    document.getElementById('mlCount').textContent = `(${mlCount})`;
+
+    document.getElementById('statBlacklist').textContent = blData.total_domains.toLocaleString();
+    document.getElementById('statBlacklistSub').textContent = `${mlCount} self-learned`;
+
+    const list = document.getElementById('mlDomainList');
+    if (!blData.domains.length) {
+      list.innerHTML = '<div class="empty-note">No self-learned domains yet — these appear once the ML layer auto-blacklists a high-confidence phishing URL.</div>';
+      return;
+    }
+    list.innerHTML = blData.domains.map(d => `
+      <div class="domain-item">
+        <span class="d">${d.domain}</span>
+        <span class="t">${fmtTime(d.added_at)}</span>
+      </div>
+    `).join('');
+  }
+
+  async function refresh() {
+    clearError();
+    try {
+      const [stats, verdicts, overrides, blacklist] = await Promise.all([
+        getJSON('/stats'),
+        getJSON('/verdicts?limit=50' + (layerFilter.value ? `&layer=${encodeURIComponent(layerFilter.value)}` : '')),
+        getJSON('/overrides?limit=50'),
+        getJSON('/blacklist?source=ml_auto_learned&limit=50'),
+      ]);
+
+      document.getElementById('statTotal').textContent = stats.total_checks.toLocaleString();
+      document.getElementById('statSafe').textContent = (stats.by_verdict?.safe || 0).toLocaleString();
+      document.getElementById('statPhishing').textContent = (stats.by_verdict?.phishing || 0).toLocaleString();
+      document.getElementById('statLatency').textContent = stats.avg_response_time_ms != null ? `${stats.avg_response_time_ms} ms` : '—';
+
+      populateLayerFilter(stats.by_detection_layer);
+      renderLayerBreakdown(stats.by_detection_layer);
+      renderVerdicts(verdicts);
+      renderOverrides(overrides);
+      renderMlBlacklist(blacklist);
+
+      updatedLabel.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } catch (err) {
+      showError(`Could not reach backend at ${apiBase()} — ${err.message}. Check the API base URL and that Flask is running.`);
+    }
+  }
+
+  function applyTheme() {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (theme === 'dark') {
+      themeIcon.textContent = '☀️';
+      themeLabel.textContent = 'Light';
+    } else {
+      themeIcon.textContent = '🌙';
+      themeLabel.textContent = 'Dark';
+    }
+  }
+
+  themeBtn.addEventListener('click', () => {
+    theme = theme === 'light' ? 'dark' : 'light';
+    applyTheme();
+  });
+
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    theme = 'dark';
+  }
+  applyTheme();
+
+  function scheduleAuto() {
+    if (timer) clearInterval(timer);
+    if (autoRefresh) timer = setInterval(refresh, 5000);
+  }
+
+  autoBtn.addEventListener('click', () => {
+    autoRefresh = !autoRefresh;
+    autoBtn.classList.toggle('on', autoRefresh);
+    autoBtn.innerHTML = autoRefresh
+      ? '<span class="pulse-dot"></span> Live (5s)'
+      : '<span class="pulse-dot"></span> Paused';
+    scheduleAuto();
+  });
+
+  refreshBtn.addEventListener('click', refresh);
+  layerFilter.addEventListener('change', refresh);
+  apiInput.addEventListener('change', refresh);
+
+  refresh();
+  scheduleAuto();
+})();
+</script>
+
+</body>
+</html>
