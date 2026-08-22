@@ -215,6 +215,59 @@ def remove_from_blacklist(domain: str) -> bool:
     return False
 
 
+def get_blacklist_domains(
+    source: str | None = None, limit: int = 100
+) -> list[dict]:
+    """Returns blacklist domains with their source, confidence, and
+
+    added_at timestamp, most recently added first.
+
+    Reads straight from the database rather than the in-memory BLACKLIST
+    set, since BLACKLIST only stores bare domain strings with no source
+    or timestamp info attached. Pass source="ml_auto_learned" to get only
+    the domains the system taught itself at runtime, as opposed to the
+    ones seeded from PhishTank at migration time.
+    """
+    conn = _get_conn()
+    try:
+        if source:
+            rows = conn.execute(
+                "SELECT domain, source, confidence, added_at FROM blacklist_domains "
+                "WHERE source = ? ORDER BY added_at DESC LIMIT ?",
+                (source, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT domain, source, confidence, added_at FROM blacklist_domains "
+                "ORDER BY added_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+        return [
+            {"domain": r[0], "source": r[1], "confidence": r[2], "added_at": r[3]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def count_blacklist_by_source() -> dict[str, int]:
+    """Returns {source: count} for every distinct source in blacklist_domains,
+
+    e.g. {"phishtank": 11842, "ml_auto_learned": 47}. Lets the dashboard show
+    how many domains the system has taught itself at runtime versus how many
+    came from the seeded threat-intel list.
+    """
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT source, COUNT(*) FROM blacklist_domains GROUP BY source"
+        ).fetchall()
+        return {source: count for source, count in rows}
+    finally:
+        conn.close()
+
+
 def check_blacklist(url: str) -> dict | None:
     """Check if URL's domain is in BLACKLIST and return verdict."""
     domain = _extract_domain(url)
