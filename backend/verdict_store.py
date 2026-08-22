@@ -135,6 +135,48 @@ def get_verdict_stats(limit_recent: int = 20) -> dict:
         conn.close()
 
 
+def get_recent_verdicts(limit: int = 50, layer: str | None = None) -> list[dict]:
+    """Returns the most recent verdict_log rows, newest first.
+
+    Powers the dashboard's verdict log table. Unlike get_verdict_stats()'s
+    `recent` (hardcoded to 20 rows, no filtering), this supports a larger
+    page size and an optional detection_layer filter, so a demo can show
+    e.g. just ML-model hits or just lookalike hits on demand.
+    """
+    conn = _get_conn()
+    try:
+        if layer:
+            rows = conn.execute(
+                "SELECT url, domain, verdict, detection_layer, confidence, "
+                "ml_score, response_time_ms, checked_at FROM verdict_log "
+                "WHERE detection_layer = ? ORDER BY checked_at DESC LIMIT ?",
+                (layer, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT url, domain, verdict, detection_layer, confidence, "
+                "ml_score, response_time_ms, checked_at FROM verdict_log "
+                "ORDER BY checked_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+        return [
+            {
+                "url": r[0],
+                "domain": r[1],
+                "verdict": r[2],
+                "detection_layer": r[3],
+                "confidence": r[4],
+                "ml_score": r[5],
+                "response_time_ms": r[6],
+                "checked_at": r[7],
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 # ---- user_overrides ---------------------------------------------------
 
 
@@ -221,6 +263,55 @@ def get_most_overridden_domains(
                 "verdict": r[2],
                 "detection_layer": r[3],
                 "confidence": r[4],
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def get_all_overrides(limit: int = 50) -> list[dict]:
+    """Returns individual override events, newest first, each annotated with
+
+    the most recent verdict_log entry for that URL (what verdict/layer/
+    confidence the user actually bypassed).
+
+    Unlike get_most_overridden_domains(), this is NOT aggregated by domain -
+    it's a raw event feed, which is what a live demo table wants: exactly
+    which URL was overridden, by which tab, and when.
+
+    Uses a correlated subquery rather than a window function so this stays
+    compatible with older SQLite builds.
+    """
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                o.url,
+                o.tab_id,
+                o.overridden_at,
+                (SELECT verdict FROM verdict_log
+                 WHERE url = o.url ORDER BY checked_at DESC LIMIT 1) AS verdict,
+                (SELECT detection_layer FROM verdict_log
+                 WHERE url = o.url ORDER BY checked_at DESC LIMIT 1) AS detection_layer,
+                (SELECT confidence FROM verdict_log
+                 WHERE url = o.url ORDER BY checked_at DESC LIMIT 1) AS confidence
+            FROM user_overrides o
+            ORDER BY o.overridden_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+        return [
+            {
+                "url": r[0],
+                "tab_id": r[1],
+                "overridden_at": r[2],
+                "verdict": r[3],
+                "detection_layer": r[4],
+                "confidence": r[5],
             }
             for r in rows
         ]
